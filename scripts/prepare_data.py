@@ -51,8 +51,8 @@ for train_chunk in train:
     t2 = train_chunk[((train_chunk.year == 2014) & (train_chunk.month >= 8))]
 
     # Drop year
-    t1 = train_chunk.drop(['year'], axis=1)
-    t2 = train_chunk.drop(['year'], axis=1)
+    t1 = t1.drop(['year'], axis=1)
+    t2 = t2.drop(['year'], axis=1)
 
     # Re-order
     cols = t1.columns.tolist()
