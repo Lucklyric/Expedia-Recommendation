@@ -4,3 +4,5 @@ data/
 scripts/notebook/\.ipynb_checkpoints/
 
 \.idea/
+
+scripts/log/
