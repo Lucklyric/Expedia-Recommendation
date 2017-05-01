@@ -1,8 +1,9 @@
 import tensorflow as tf
 import tensorflow.contrib as tc
+import numpy as np
 
-IS_TRAINING = False
-NUM_EPOCHS = 1
+IS_TRAINING = True
+NUM_EPOCHS = 10000
 LEARNING_RATE = 0.00001
 
 
@@ -31,6 +32,10 @@ class RDWModel(object):
         self._build_model()
 
     def _build_model(self):
+        if IS_TRAINING:
+            self.dropout_prob = 0.5
+        else:
+            self.dropout_prob = 1
         with tf.name_scope("Config"):
             self.global_step = tf.Variable(0, name="global_step", trainable=False, dtype=tf.int32)
         with tf.name_scope("Input"):
@@ -42,7 +47,7 @@ class RDWModel(object):
                                                                         allow_smaller_final_batch=True)
             else:
                 feature, label = read_and_decode("../data/train-13.tfrecords")
-                self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=128, num_threads=3,
+                self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=1, num_threads=3,
                                                                 capacity=2000,
                                                                 allow_smaller_final_batch=True)
         # Load test Data-set
@@ -52,11 +57,12 @@ class RDWModel(object):
         # self.target_label = tf.placeholder(tf.float32, shape=[None, 1])
 
         with tf.name_scope("FC"):
-            self.net = self.feature
-            self.net = tf.nn.dropout(tc.layers.fully_connected(self.net, 500), 0.5)
-            self.net = tf.nn.dropout(tc.layers.fully_connected(self.net, 500), 0.5)
-            self.net = tf.nn.dropout(tc.layers.fully_connected(self.net, 500), 0.5)
-            self.net = tf.nn.dropout(tc.layers.fully_connected(self.net, 500), 0.5)
+            self.net = self.add_norm(self.feature, 24)
+            self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
+            self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
+            self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
+            self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
+            self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
 
         with tf.name_scope("Output"):
             self.output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
@@ -76,6 +82,35 @@ class RDWModel(object):
         with tf.name_scope("Train"):
             self.train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(self.loss)
             self.increase_step = self.global_step.assign_add(1)
+
+    def _add_fc_layer(self, layer_input, size, activation_fn=tf.nn.relu, dropout=True, norm=True):
+        output = tc.layers.fully_connected(layer_input, size, activation_fn=activation_fn)
+
+        if norm:
+            output = self.add_norm(output, size=size)
+        if dropout is True:
+            output = tf.nn.dropout(output, self.dropout_prob)
+
+        return output
+
+    @staticmethod
+    def add_norm(layer_input, size):
+        fc_mean, fc_var = tf.nn.moments(layer_input, axes=[0])
+        scale = tf.Variable(tf.ones([size]))
+        shift = tf.Variable(tf.zeros([size]))
+        epsilon = 0.001
+
+        ema = tf.train.ExponentialMovingAverage(decay=0.5)
+
+        def mean_var_with_update():
+            ema_apply_op = ema.apply([fc_mean, fc_var])
+            with tf.control_dependencies([ema_apply_op]):
+                return tf.identity(fc_mean), tf.identity(fc_var)
+
+        mean, var = mean_var_with_update()
+
+        layer_output = tf.nn.batch_normalization(layer_input, mean, var, shift, scale, epsilon)
+        return layer_output
 
     def run_train(self, sess):
         step = 0
@@ -99,7 +134,7 @@ class RDWModel(object):
             while True:
                 net_output, target_output, num_correct = sess.run(
                     [self.output, self.label_batch, self.num_correct_prediction])
-
+                test_out = np.argmax(net_output)
                 correnct_entry += num_correct
 
                 step += len(net_output)
