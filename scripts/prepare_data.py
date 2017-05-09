@@ -4,7 +4,13 @@
 
 import tensorflow as tf
 import pandas as pd
+import numpy as np
 
+# Prepare for latent variables
+des_latent = pd.read_csv("../../data/destinations.csv")
+np.save("../../data/destinations", des_latent)
+
+# Prepare for records
 chunksize = 100000
 
 # In[3]:

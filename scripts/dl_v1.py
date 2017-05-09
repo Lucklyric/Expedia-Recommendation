@@ -19,7 +19,7 @@ def read_and_decode(filename):
                                        })
 
     target_label = tf.cast(features['label'], tf.int64)
-    input_feature = features['feature']  # Input shape batch_size x 25
+    input_feature = tf.cast(features['feature'], tf.float64)  # Input shape batch_size x 25
 
     # Drop user id content's
     input_feature = tf.concat([input_feature[:11], input_feature[12:]], axis=0)
@@ -34,11 +34,18 @@ class RDWModel(object):
     def _build_model(self):
         if IS_TRAINING:
             self.dropout_prob = 0.5
+            self.pos_fix = "train"
         else:
             self.dropout_prob = 1
+            self.pos_fix = "test"
         with tf.name_scope("Config"):
             self.global_step = tf.Variable(0, name="global_step", trainable=False, dtype=tf.int32)
-        with tf.name_scope("Input"):
+            # Read dest embedding data
+            self.destination_embedding = tf.Variable(
+                tf.convert_to_tensor(np.load("../data/destinations.npy"), dtype=tf.float64), trainable=False,
+                name="des_embedding")
+
+        with tf.name_scope("Input" + self.pos_fix):
             if IS_TRAINING is True:
                 feature, label = read_and_decode("../data/train-13.tfrecords")
                 self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
@@ -55,9 +62,13 @@ class RDWModel(object):
         #
         # self.input = tf.placeholder(tf.float32, shape=[None, 24], name="user_input")
         # self.target_label = tf.placeholder(tf.float32, shape=[None, 1])
+        with tf.name_scope("Des_Embedding"):
+            des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
+                                                           tf.cast(self.feature[:, 17], tf.int64))
+            self.feature = tf.concat([self.feature[:, :17], self.feature[:, 18:], des_embedding_feature], axis=1)
 
         with tf.name_scope("FC"):
-            self.net = self.add_norm(self.feature, 24)
+            self.net = self.add_norm(self.feature, 24 - 1 + 149)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
@@ -90,14 +101,13 @@ class RDWModel(object):
             output = self.add_norm(output, size=size)
         if dropout is True:
             output = tf.nn.dropout(output, self.dropout_prob)
-
         return output
 
     @staticmethod
     def add_norm(layer_input, size):
         fc_mean, fc_var = tf.nn.moments(layer_input, axes=[0])
-        scale = tf.Variable(tf.ones([size]))
-        shift = tf.Variable(tf.zeros([size]))
+        scale = tf.Variable(tf.ones([size], dtype=tf.float64))
+        shift = tf.Variable(tf.zeros([size], dtype=tf.float64))
         epsilon = 0.001
 
         ema = tf.train.ExponentialMovingAverage(decay=0.5)
