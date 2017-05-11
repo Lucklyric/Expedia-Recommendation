@@ -67,15 +67,39 @@ class RDWModel(object):
                                                            tf.cast(self.feature[:, 17], tf.int64))
 
             site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
+            posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
+            u_loc_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 7], tf.int64), 1000, 8, "u_loc_contry")
+            u_loc_region = self.add_bucket_embedding(tf.cast(self.feature[:, 8], tf.int64), 10000, 8, "u_loc_region")
+            u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 10000, 8, "u_loc_city")
+            is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 2, 8, "is_mobile")
+            is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_package")
+            channel = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 10000, 8, "channel")
+            des_type_id = self.add_bucket_embedding(tf.cast(self.feature[:, 17], tf.int64), 1000000, 8, "des_type_id")
+            is_booking = self.add_bucket_embedding(tf.cast(self.feature[:, 18], tf.int64), 2, 8, "is_booking")
+            h_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 100, 8, "h_continent")
+            h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 21], tf.int64), 1000, 8, "h_contry")
+            h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 22], tf.int64), 100000, 8, "h_market")
 
             self.feature = tf.concat(
-                [self.feature[:, :5], self.feature[:, 6:17], self.feature[:, 18:],
+                [self.feature[:, :5], self.feature[:, 10:11], self.feature[:, 14:17], self.feature[:, 19:20],
                  site_name,
+                 posa_continent,
+                 u_loc_contry,
+                 u_loc_region,
+                 u_loc_city,
+                 is_mobile,
+                 is_booking,
+                 is_package,
+                 channel,
+                 des_type_id,
+                 h_continent,
+                 h_contry,
+                 h_market,
                  des_embedding_feature],
                 axis=1)
 
         with tf.name_scope("FC"):
-            self.net = self.add_norm(self.feature, 24 - 1 + 149 - 1 + 8)
+            self.net = self.add_norm(self.feature, 24 - 1 + 149 - 13 + 13 * 8)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
