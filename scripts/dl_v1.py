@@ -4,7 +4,7 @@ import numpy as np
 
 IS_TRAINING = True
 NUM_EPOCHS = 10000
-LEARNING_RATE = 0.00001
+LEARNING_RATE = 0.001
 
 
 def read_and_decode(filename):
@@ -65,10 +65,17 @@ class RDWModel(object):
         with tf.name_scope("Des_Embedding"):
             des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
                                                            tf.cast(self.feature[:, 17], tf.int64))
-            self.feature = tf.concat([self.feature[:, :17], self.feature[:, 18:], des_embedding_feature], axis=1)
+
+            site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
+
+            self.feature = tf.concat(
+                [self.feature[:, :5], self.feature[:, 6:17], self.feature[:, 18:],
+                 site_name,
+                 des_embedding_feature],
+                axis=1)
 
         with tf.name_scope("FC"):
-            self.net = self.add_norm(self.feature, 24 - 1 + 149)
+            self.net = self.add_norm(self.feature, 24 - 1 + 149 - 1 + 8)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
@@ -102,6 +109,14 @@ class RDWModel(object):
         if dropout is True:
             output = tf.nn.dropout(output, self.dropout_prob)
         return output
+
+    @staticmethod
+    def add_bucket_embedding(inputs, bucket_size, dim, name):
+        with tf.variable_scope(name):
+            embeddings = tf.Variable(
+                tf.random_uniform([bucket_size, dim], -1.0, 1.0, dtype=tf.float64), dtype=tf.float64)
+            mod_input = tf.mod(inputs, bucket_size)
+            return tf.nn.embedding_lookup(embeddings, mod_input)
 
     @staticmethod
     def add_norm(layer_input, size):
