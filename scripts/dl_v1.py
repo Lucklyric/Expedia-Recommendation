@@ -22,7 +22,7 @@ def read_and_decode(filename):
     input_feature = tf.cast(features['feature'], tf.float64)  # Input shape batch_size x 25
 
     # Drop user id content's
-    input_feature = tf.concat([input_feature[:11], input_feature[12:]], axis=0)
+    # input_feature = tf.concat([input_feature[:11], input_feature[12:]], axis=0)
 
     return input_feature, target_label
 
@@ -63,46 +63,49 @@ class RDWModel(object):
         # self.input = tf.placeholder(tf.float32, shape=[None, 24], name="user_input")
         # self.target_label = tf.placeholder(tf.float32, shape=[None, 1])
         with tf.name_scope("Des_Embedding"):
-            des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
-                                                           tf.cast(self.feature[:, 17], tf.int64))
 
+            # Time duriation
+            src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
+            src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
+            src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
+            src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
+            self.time_feature = tf.concat([src_ci_month, src_ci_day, src_co_day, src_co_month], axis=1)
+
+            # Source
+            is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
+            is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 2, 8, "is_package")
+            channel = self.add_bucket_embedding(tf.cast(self.feature[:, 14], tf.int64), 10000, 8, "channel")
             site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
             posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
-            u_loc_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 7], tf.int64), 1000, 8, "u_loc_contry")
-            u_loc_region = self.add_bucket_embedding(tf.cast(self.feature[:, 8], tf.int64), 10000, 8, "u_loc_region")
-            u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 10000, 8, "u_loc_city")
-            is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 2, 8, "is_mobile")
-            is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_package")
-            channel = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 10000, 8, "channel")
-            des_type_id = self.add_bucket_embedding(tf.cast(self.feature[:, 17], tf.int64), 1000000, 8, "des_type_id")
-            is_booking = self.add_bucket_embedding(tf.cast(self.feature[:, 18], tf.int64), 2, 8, "is_booking")
+            self.source_feature = tf.concat([is_mobile, is_package, channel, site_name, posa_continent], axis=1)
+
+            # Destination
+            des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
+                                                           tf.cast(self.feature[:, 18], tf.int64))
+            des_type_id = self.add_bucket_embedding(tf.cast(self.feature[:, 19], tf.int64), 100000, 8, "des_type_id")
+            # Hotel info
             h_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 100, 8, "h_continent")
             h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 21], tf.int64), 1000, 8, "h_contry")
             h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 22], tf.int64), 100000, 8, "h_market")
+            self.des_feature = tf.concat([des_embedding_feature, des_type_id, h_market, h_contry, h_continent], axis=1)
 
-            self.feature = tf.concat(
-                [self.feature[:, :5], self.feature[:, 10:11], self.feature[:, 14:17], self.feature[:, 19:20],
-                 site_name,
-                 posa_continent,
-                 u_loc_contry,
-                 u_loc_region,
-                 u_loc_city,
-                 is_mobile,
-                 is_booking,
-                 is_package,
-                 channel,
-                 des_type_id,
-                 h_continent,
-                 h_contry,
-                 h_market,
-                 des_embedding_feature],
-                axis=1)
+            # User info
+            u_loc_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 7], tf.int64), 1000, 8, "u_loc_contry")
+            u_loc_region = self.add_bucket_embedding(tf.cast(self.feature[:, 8], tf.int64), 100000, 8, "u_loc_region")
+            u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
+            self.user_feature = tf.concat([u_loc_city, u_loc_region, u_loc_contry, self.feature[:, 10:11]], axis=1)
+
+            # Query Requirements
+            self.query_feature = tf.concat([self.feature[:, 15:18]], axis=1)
+
+            # other feature
+            tran_month = self.add_bucket_embedding(tf.cast(self.feature[:, 4], tf.int64), 12, 8, "trans_month")
 
         with tf.name_scope("FC"):
             self.net = self.add_norm(self.feature, 24 - 1 + 149 - 13 + 13 * 8)
-            self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
-            self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
-            self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
+            self.net = self._add_fc_layer(self.net, 1000, dropout=IS_TRAINING)
+            self.net = self._add_fc_layer(self.net, 1000, dropout=IS_TRAINING)
+            self.net = self._add_fc_layer(self.net, 800, dropout=IS_TRAINING)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
             self.net = self._add_fc_layer(self.net, 500, dropout=IS_TRAINING)
 
