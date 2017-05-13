@@ -2,8 +2,9 @@ import tensorflow as tf
 import tensorflow.contrib as tc
 import numpy as np
 
-IS_TRAINING = True
-NUM_EPOCHS = 1000000
+IS_TRAINING = False
+# NUM_EPOCHS = 1000000
+NUM_EPOCHS = 1
 LEARNING_RATE = 0.001
 
 
@@ -47,13 +48,13 @@ class RDWModel(object):
 
         with tf.name_scope("Input" + self.pos_fix):
             if IS_TRAINING is True:
-                feature, label = read_and_decode("../data/train-13-part.tfrecords")
+                feature, label = read_and_decode("../data/train-13.tfrecords")
                 self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
                                                                         allow_smaller_final_batch=True)
             else:
-                feature, label = read_and_decode("../data/train-13-part.tfrecords")
+                feature, label = read_and_decode("../data/train-14.tfrecords")
                 self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=1, num_threads=3,
                                                                 capacity=2000,
                                                                 allow_smaller_final_batch=True)
@@ -131,6 +132,7 @@ class RDWModel(object):
         with tf.name_scope("Batch_eval"):
             self.num_correct_prediction = tf.reduce_sum(
                 tf.cast(tf.equal(self.label_batch, tf.argmax(self.output, 1)), tf.float32))
+            self.mAP, self.mAP_update = tc.metrics.streaming_sparse_average_precision_at_k(self.output, self.label_batch, 5)
 
         if IS_TRAINING is False:
             return
@@ -206,14 +208,15 @@ class RDWModel(object):
         correnct_entry = 0.0
         try:
             while True:
-                net_output, target_output, num_correct = sess.run(
-                    [self.output, self.label_batch, self.num_correct_prediction])
-                test_out = np.argmax(net_output)
-                correnct_entry += num_correct
-
+                sess.run(self.mAP_update)
+                mAP, net_output, target_output, num_correct = sess.run(
+                    [self.mAP, self.output, self.label_batch, self.num_correct_prediction])
+                # test_out = np.argmax(net_output)
+                # correnct_entry += num_correct
+                # print mAP
                 step += len(net_output)
         except tf.errors.OutOfRangeError:
-            print ("Done training for %d epochs, %d steps, %2f accuracy ." % (NUM_EPOCHS, step, correnct_entry / step))
+            print ("Done training for %d epochs, %d steps, %2f mAP@5 accuracy ." % (NUM_EPOCHS, step, mAP))
 
 
 if __name__ == "__main__":
@@ -231,14 +234,13 @@ if __name__ == "__main__":
         writer = tf.summary.FileWriter("log/v1", session.graph)
         ckpt = tf.train.get_checkpoint_state("model/v1")
 
+        session.run(tf.global_variables_initializer())
+        session.run(tf.local_variables_initializer())
         if ckpt and ckpt.model_checkpoint_path:
             saver.restore(session, ckpt.model_checkpoint_path)
             print ("Restore ckpt")
         else:
             print ("No ckpt found")
-
-        session.run(tf.global_variables_initializer())
-        session.run(tf.local_variables_initializer())
 
         if IS_TRAINING:
             coord = tf.train.Coordinator()
