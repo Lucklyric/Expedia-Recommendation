@@ -55,7 +55,7 @@ class RDWModel(object):
                                                                         allow_smaller_final_batch=True)
             else:
                 feature, label = read_and_decode("../data/train-14.tfrecords")
-                self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=1, num_threads=3,
+                self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=256, num_threads=3,
                                                                 capacity=2000,
                                                                 allow_smaller_final_batch=True)
         # Load test Data-set
