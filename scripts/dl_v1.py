@@ -2,9 +2,10 @@ import tensorflow as tf
 import tensorflow.contrib as tc
 import numpy as np
 
-IS_TRAINING = False
-# NUM_EPOCHS = 1000000
-NUM_EPOCHS = 1
+IS_TRAINING = True
+NUM_EPOCHS = 1000000
+# IS_TRAINING = False
+# NUM_EPOCHS = 1
 LEARNING_RATE = 0.001
 
 
@@ -55,7 +56,7 @@ class RDWModel(object):
                                                                         allow_smaller_final_batch=True)
             else:
                 feature, label = read_and_decode("../data/train-14.tfrecords")
-                self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=256, num_threads=3,
+                self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=512, num_threads=3,
                                                                 capacity=2000,
                                                                 allow_smaller_final_batch=True)
         # Load test Data-set
@@ -132,7 +133,8 @@ class RDWModel(object):
         with tf.name_scope("Batch_eval"):
             self.num_correct_prediction = tf.reduce_sum(
                 tf.cast(tf.equal(self.label_batch, tf.argmax(self.output, 1)), tf.float32))
-            self.mAP, self.mAP_update = tc.metrics.streaming_sparse_average_precision_at_k(self.output, self.label_batch, 5)
+            self.mAP, self.mAP_update = tc.metrics.streaming_sparse_average_precision_at_k(self.output,
+                                                                                           self.label_batch, 5)
 
         if IS_TRAINING is False:
             return
@@ -171,21 +173,34 @@ class RDWModel(object):
 
     @staticmethod
     def add_norm(layer_input, size):
-        fc_mean, fc_var = tf.nn.moments(layer_input, axes=[0])
         scale = tf.Variable(tf.ones([size], dtype=tf.float64))
         shift = tf.Variable(tf.zeros([size], dtype=tf.float64))
+        pop_mean = tf.Variable(tf.zeros([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
+        pop_var = tf.Variable(tf.ones([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
         epsilon = 0.001
+        if IS_TRAINING:
+            # batch_mean, batch_var = tf.nn.moments(layer_input, axes=[0])
+            fc_mean, fc_var = tf.nn.moments(layer_input, axes=[0])
 
-        ema = tf.train.ExponentialMovingAverage(decay=0.5)
+            ema = tf.train.ExponentialMovingAverage(decay=0.5)
 
-        def mean_var_with_update():
-            ema_apply_op = ema.apply([fc_mean, fc_var])
-            with tf.control_dependencies([ema_apply_op]):
-                return tf.identity(fc_mean), tf.identity(fc_var)
+            def mean_var_with_update():
+                ema_apply_op = ema.apply([fc_mean, fc_var])
+                with tf.control_dependencies([ema_apply_op, tf.assign(pop_var, fc_var), tf.assign(pop_mean, fc_mean)]):
+                    return tf.identity(fc_mean), tf.identity(fc_var)
 
-        mean, var = mean_var_with_update()
-
-        layer_output = tf.nn.batch_normalization(layer_input, mean, var, shift, scale, epsilon)
+            mean, var = mean_var_with_update()
+            layer_output = tf.nn.batch_normalization(layer_input, mean, var, shift, scale, epsilon)
+            # decay = 0.5
+            # train_mean = tf.assign(pop_mean,
+            #                        pop_mean * decay + batch_mean * (1 - decay))
+            # train_var = tf.assign(pop_var,
+            #                       pop_var * decay + batch_var * (1 - decay))
+            # with tf.control_dependencies([train_mean, train_var]):
+            #     return tf.nn.batch_normalization(layer_input,
+            #                                      pop_mean, pop_var, shift, scale, epsilon)
+        else:
+            layer_output = tf.nn.batch_normalization(layer_input, pop_mean, pop_var, shift, scale, epsilon)
         return layer_output
 
     def run_train(self, sess):
@@ -208,15 +223,26 @@ class RDWModel(object):
         correnct_entry = 0.0
         try:
             while True:
-                sess.run(self.mAP_update)
-                mAP, net_output, target_output, num_correct = sess.run(
-                    [self.mAP, self.output, self.label_batch, self.num_correct_prediction])
-                # test_out = np.argmax(net_output)
-                # correnct_entry += num_correct
+                # sess.run(self.mAP_update)
+                mAP, _, net_output, feature_value, target_label, num_correct = sess.run(
+                    [self.mAP, self.mAP_update, self.output, self.feature, self.label_batch,
+                     self.num_correct_prediction])
+                test_out = np.argmax(net_output, axis=1)
+                correnct_entry += num_correct
+                # print test_out
+                # print feature_value
+                # print target_label
+                # print correnct_entry
+                # net_output, mAP, _, _, _ = sess.run(
+                #     [self.output, self.mAP, self.mAP_update, self.output, self.num_correct_prediction])
                 # print mAP
                 step += len(net_output)
+                print step
         except tf.errors.OutOfRangeError:
-            print ("Done training for %d epochs, %d steps, %2f mAP@5 accuracy ." % (NUM_EPOCHS, step, mAP))
+            print ("Done training for %d epochs, %d steps, %f mAP@5 %f accuracy ." % (
+                NUM_EPOCHS, step, mAP, correnct_entry / step))
+            # print ("Done training for %d epochs, %d steps %f mAP" % (
+            #     NUM_EPOCHS, step, mAP))
 
 
 if __name__ == "__main__":
