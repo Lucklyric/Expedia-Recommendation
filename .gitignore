@@ -8,3 +8,5 @@ scripts/notebook/\.ipynb_checkpoints/
 scripts/log/
 
 scripts/model/v1/
+
+scripts/model/v2/
