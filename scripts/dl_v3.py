@@ -162,8 +162,9 @@ class RDWModel(object):
 
         with tf.name_scope("Loss"):
             self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float64)
+            self.s_output = tf.nn.softmax(self.output)
             self.loss = tf.reduce_mean(
-                tf.reduce_sum(keras.backend.binary_crossentropy(self.output, self.label_vector, from_logits=True),
+                tf.reduce_sum(keras.backend.binary_crossentropy(self.s_output, self.label_vector, from_logits=False),
                               axis=1))
 
             # self.loss = tf.reduce_mean(
