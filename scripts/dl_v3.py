@@ -44,7 +44,7 @@ class RDWModel(object):
 
     def _build_model(self):
         if IS_TRAINING:
-            self.dropout_prob = 0.5
+            self.dropout_prob = 0.65
             self.pos_fix = "train"
         else:
             self.dropout_prob = 1
@@ -144,9 +144,9 @@ class RDWModel(object):
 
         with tf.name_scope("FC"):
             self.net = self.add_fc_stack_layers(self.stack_features, [1024])
-            self.net = self.add_fc_stack_layers(self.stack_features, [1024]) + self.net
+            self.net = self.add_fc_stack_layers(self.stack_features, [1024])
             self.net = self.add_fc_stack_layers(self.stack_features, [512])
-            self.net = self.add_fc_stack_layers(self.stack_features, [512]) + self.net
+            self.net = self.add_fc_stack_layers(self.stack_features, [512])
             self.net = self.add_fc_stack_layers(self.stack_features, [256])
         with tf.name_scope("Output"):
             self.output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
@@ -161,17 +161,18 @@ class RDWModel(object):
             return
 
         with tf.name_scope("Loss"):
-            self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float64)
-            self.s_output = tf.nn.softmax(self.output)
-            self.loss = tf.reduce_mean(
-                tf.reduce_sum(keras.backend.binary_crossentropy(self.s_output, self.label_vector, from_logits=False),
-                              axis=1))
+            # self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float64)
+            # self.s_output = tf.nn.softmax(self.output)
+            # self.loss = tf.reduce_mean(
+            #     tf.reduce_sum(keras.backend.binary_crossentropy(self.s_output, self.label_vector, from_logits=False),
+            #                   axis=1))
+
 
             # self.loss = tf.reduce_mean(
             #     keras.backend.sparse_categorical_crossentropy(output=self.output, target=self.label_batch,
             #                                                   from_logits=True))
-            # self.loss = tf.reduce_mean(
-            #     tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch, logits=self.output))
+            self.loss = tf.reduce_mean(
+                tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch, logits=self.output))
             tf.summary.scalar('loss', self.loss)
 
         with tf.name_scope("Train"):
@@ -183,8 +184,8 @@ class RDWModel(object):
 
         if norm:
             output = self.add_norm(output, size=size)
-        # if dropout is True:
-        #     output = tf.nn.dropout(output, self.dropout_prob)
+        if dropout is True:
+            output = tf.nn.dropout(output, self.dropout_prob)
         return output
 
     def add_fc_stack_layers(self, inputs, layer_configure, norm=True):
