@@ -13,9 +13,9 @@ import tensorflow.contrib.keras as keras
 VERSION = "v3"
 IS_TRAINING = True
 NUM_EPOCHS = 1000000
-IS_TRAINING = False
-NUM_EPOCHS = 1
-LEARNING_RATE = 0.001
+# IS_TRAINING = False
+# NUM_EPOCHS = 1
+LEARNING_RATE = 0.01
 
 
 def read_and_decode(filename):
@@ -59,7 +59,7 @@ class RDWModel(object):
         with tf.name_scope("Input" + self.pos_fix):
             if IS_TRAINING is True:
                 feature, label = read_and_decode("../data/train-13.tfrecords")
-                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=256, num_threads=3,
+                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
                                                                         allow_smaller_final_batch=False)
@@ -139,6 +139,9 @@ class RDWModel(object):
                                              self.other_feature,
                                              self.user_id_feature], axis=1)
 
+            self.feature_weight = tf.Variable(tf.ones([self.stack_features.get_shape()[-1]], dtype=tf.float64))
+            self.stack_features = tf.multiply(self.stack_features, self.feature_weight)
+
         with tf.name_scope("FC"):
             self.net = self.add_fc_stack_layers(self.stack_features, [1024])
             self.net = self.add_fc_stack_layers(self.stack_features, [1024]) + self.net
@@ -158,10 +161,11 @@ class RDWModel(object):
             return
 
         with tf.name_scope("Loss"):
-            self.label_vector = tf.one_hot(self.label_batch, 100)
-            self.s_output = tf.nn.softmax(self.output)
+            self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float64)
             self.loss = tf.reduce_mean(
-                tf.reduce_mean(keras.backend.binary_crossentropy(self.s_output, self.label_vector), axis=1))
+                tf.reduce_sum(keras.backend.binary_crossentropy(self.output, self.label_vector, from_logits=True),
+                              axis=1))
+
             # self.loss = tf.reduce_mean(
             #     keras.backend.sparse_categorical_crossentropy(output=self.output, target=self.label_batch,
             #                                                   from_logits=True))
