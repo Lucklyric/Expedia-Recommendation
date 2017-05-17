@@ -50,7 +50,7 @@ class RDWModel(object):
         with tf.name_scope("Input" + self.pos_fix):
             if IS_TRAINING is True:
                 feature, label = read_and_decode("../data/train-13.tfrecords")
-                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
+                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=256, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
                                                                         allow_smaller_final_batch=True)
@@ -238,6 +238,7 @@ class RDWModel(object):
                 # print mAP
                 step += len(net_output)
                 print step
+                print mAP
         except tf.errors.OutOfRangeError:
             print ("Done training for %d epochs, %d steps, %f mAP@5 %f accuracy ." % (
                 NUM_EPOCHS, step, mAP, correnct_entry / step))

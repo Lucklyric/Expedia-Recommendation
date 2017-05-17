@@ -58,7 +58,7 @@ class RDWModel(object):
 
         with tf.name_scope("Input" + self.pos_fix):
             if IS_TRAINING is True:
-                feature, label = read_and_decode("../data/train-13.tfrecords")
+                feature, label = read_and_decode("../data/train-13-all-book-type.tfrecords")
                 self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
