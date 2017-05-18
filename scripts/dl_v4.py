@@ -8,19 +8,20 @@ import tensorflow.contrib as tc
 import numpy as np
 import tensorflow.contrib.keras as keras
 
-# import tensorflow.contrib as slim
-
-VERSION = "v3"
-IS_TRAINING = True
+TRAINING = 0
+TESTING = 1
+INFERENCE = 2
+VERSION = "v4"
+MODE = 2
 NUM_EPOCHS = 1000000
-# IS_TRAINING = False
+# MODE = TESTING
 # NUM_EPOCHS = 1
 LEARNING_RATE = 0.01
 
 
-def read_and_decode(filename):
+def read_and_decode(filename, num_epochs=1):
     # Create queue
-    filename_queue = tf.train.string_input_producer([filename], num_epochs=NUM_EPOCHS)
+    filename_queue = tf.train.string_input_producer([filename], num_epochs=num_epochs)
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)  # Filename
     features = tf.parse_single_example(serialized_example,
@@ -43,7 +44,7 @@ class RDWModel(object):
         self._build_model()
 
     def _build_model(self):
-        if IS_TRAINING:
+        if MODE == TRAINING:
             self.dropout_prob = 0.65
             self.pos_fix = "train"
         else:
@@ -57,17 +58,23 @@ class RDWModel(object):
                 name="des_embedding")
 
         with tf.name_scope("Input" + self.pos_fix):
-            if IS_TRAINING is True:
-                feature, label = read_and_decode("../data/train-13.tfrecords")
+            if MODE == TRAINING:
+                feature, label = read_and_decode("../data/train-13.tfrecords", num_epochs=NUM_EPOCHS)
                 self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
                                                                         allow_smaller_final_batch=False)
-            else:
+            elif MODE == TESTING:
                 feature, label = read_and_decode("../data/train-14.tfrecords")
                 self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=512, num_threads=3,
                                                                 capacity=2000,
                                                                 allow_smaller_final_batch=True)
+            elif MODE == INFERENCE:
+                feature, label = read_and_decode("../data/evl.tfrecords")
+                self.feature, _ = tf.train.batch([feature, label], batch_size=1024, num_threads=3,
+                                                 capacity=2000,
+                                                 allow_smaller_final_batch=True)
+
         # Load test Data-set
 
         #
@@ -75,24 +82,24 @@ class RDWModel(object):
         # self.target_label = tf.placeholder(tf.float32, shape=[None, 1])
         with tf.name_scope("Des_Embedding"):
 
-            # Time duriation
-            src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
-            src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
-            src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
-            src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
-            self.time_feature = tf.concat([src_ci_month, src_ci_day, src_co_day, src_co_month], axis=1)
-            self.time_feature = self.add_norm(self.time_feature, 4 * 8)
-            self.time_feature = self.add_fc_stack_layers(self.time_feature, [64, 128, 256, 128])
+            # # Time duriation
+            # src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
+            # src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
+            # src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
+            # src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
+            # self.time_feature = tf.concat([src_ci_month, src_ci_day, src_co_day, src_co_month], axis=1)
+            # self.time_feature = self.add_norm(self.time_feature, 4 * 8)
+            # self.time_feature = self.add_fc_stack_layers(self.time_feature, [64, 128, 256, 128])
 
             # Source
-            is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
-            is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 2, 8, "is_package")
-            channel = self.add_bucket_embedding(tf.cast(self.feature[:, 14], tf.int64), 10000, 8, "channel")
-            site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
-            posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
-            self.source_feature = tf.concat([is_mobile, is_package, channel, site_name, posa_continent], axis=1)
-            self.source_feature = self.add_norm(self.source_feature, 5 * 8)
-            self.source_feature = self.add_fc_stack_layers(self.source_feature, [128, 256, 256, 128])
+            # is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
+            # is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 2, 8, "is_package")
+            # channel = self.add_bucket_embedding(tf.cast(self.feature[:, 14], tf.int64), 10000, 8, "channel")
+            # site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
+            # posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
+            # self.source_feature = tf.concat([is_mobile, is_package, channel, site_name, posa_continent], axis=1)
+            # self.source_feature = self.add_norm(self.source_feature, 5 * 8)
+            # self.source_feature = self.add_fc_stack_layers(self.source_feature, [128, 256, 256, 128])
 
             # Destination
             des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
@@ -121,23 +128,21 @@ class RDWModel(object):
             self.query_feature = self.add_fc_stack_layers(self.query_feature, [64, 128, 256, 128])
 
             # other feature
-            tran_month = self.add_bucket_embedding(tf.cast(self.feature[:, 4], tf.int64), 12, 8, "trans_month")
-            booking = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 8, "is_booking")
-            self.other_feature = tf.concat([tran_month, booking], axis=1)
-            self.other_feature = self.add_norm(self.other_feature, 16)
-            self.other_feature = self.add_fc_stack_layers(self.other_feature, [64, 128, 128])
+            # tran_month = self.add_bucket_embedding(tf.cast(self.feature[:, 4], tf.int64), 12, 8, "trans_month")
+            # booking = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 8, "is_booking")
+            # self.other_feature = tf.concat([tran_month, booking], axis=1)
+            # self.other_feature = self.add_norm(self.other_feature, 16)
+            # self.other_feature = self.add_fc_stack_layers(self.other_feature, [64, 128, 128])
 
             # user id
             user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 100000, 8, "user_id")
             self.user_id_feature = self.add_norm(user_id, 8)
 
-            self.stack_features = tf.concat([self.time_feature,
-                                             self.source_feature,
-                                             self.des_feature,
-                                             self.user_feature,
-                                             self.query_feature,
-                                             self.other_feature,
-                                             self.user_id_feature], axis=1)
+            self.stack_features = tf.concat([
+                self.des_feature,
+                self.user_feature,
+                self.query_feature,
+                self.user_id_feature], axis=1)
 
             self.feature_weight = tf.Variable(tf.ones([self.stack_features.get_shape()[-1]], dtype=tf.float64))
             self.stack_features = tf.multiply(self.stack_features, self.feature_weight)
@@ -150,15 +155,13 @@ class RDWModel(object):
             self.net = self.add_fc_stack_layers(self.stack_features, [256])
         with tf.name_scope("Output"):
             self.output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
-
+        if MODE != TRAINING:
+            return
         with tf.name_scope("Batch_eval"):
             self.num_correct_prediction = tf.reduce_sum(
                 tf.cast(tf.equal(self.label_batch, tf.argmax(self.output, 1)), tf.float32))
             self.mAP, self.mAP_update = tc.metrics.streaming_sparse_average_precision_at_k(self.output,
                                                                                            self.label_batch, 5)
-
-        if IS_TRAINING is False:
-            return
 
         with tf.name_scope("Loss"):
             # self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float64)
@@ -191,7 +194,7 @@ class RDWModel(object):
     def add_fc_stack_layers(self, inputs, layer_configure, norm=True):
         out = inputs
         for size in layer_configure:
-            out = self._add_fc_layer(out, size, dropout=IS_TRAINING, norm=norm)
+            out = self._add_fc_layer(out, size, dropout=(MODE == TRAINING), norm=norm)
         return out
 
     @staticmethod
@@ -209,7 +212,7 @@ class RDWModel(object):
         pop_mean = tf.Variable(tf.zeros([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
         pop_var = tf.Variable(tf.ones([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
         epsilon = 0.001
-        if IS_TRAINING:
+        if MODE == TRAINING:
             # batch_mean, batch_var = tf.nn.moments(layer_input, axes=[0])
             fc_mean, fc_var = tf.nn.moments(layer_input, axes=[0])
 
@@ -276,6 +279,25 @@ class RDWModel(object):
             # print ("Done training for %d epochs, %d steps %f mAP" % (
             #     NUM_EPOCHS, step, mAP))
 
+    def run_inference(self, sess):
+        step = 0
+        o_file= open("output_" + VERSION + ".csv", "w")
+        o_file.write("id,hotel_clusters\n")
+        try:
+            while True:
+                net_output = sess.run(self.output)
+                for row in net_output:
+                    top_pred = row.argsort()[-5:]
+                    write_p = " ".join([str(l) for l in top_pred])
+                    write_frame = "{0},{1}".format(step, write_p)
+                    o_file.write(write_frame+"\n")
+
+                    step += 1
+                print step
+        except tf.errors.OutOfRangeError:
+            print ("Done for inferencefro %d epochs, %d steps." % (1, step))
+            o_file.close()
+
 
 if __name__ == "__main__":
     # RDWModel.run_test()
@@ -301,16 +323,22 @@ if __name__ == "__main__":
         else:
             print ("No ckpt found")
 
-        if IS_TRAINING:
+        if MODE == TRAINING:
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=session, coord=coord)
             model.run_train(session)
             coord.request_stop()
             coord.join(threads)
-        else:
+        elif MODE == TESTING:
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=session, coord=coord)
             model.run_evl(session)
+            coord.request_stop()
+            coord.join(threads)
+        elif MODE == INFERENCE:
+            coord = tf.train.Coordinator()
+            threads = tf.train.start_queue_runners(sess=session, coord=coord)
+            model.run_inference(session)
             coord.request_stop()
             coord.join(threads)
 
