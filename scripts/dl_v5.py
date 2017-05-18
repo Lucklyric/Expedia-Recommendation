@@ -192,7 +192,10 @@ class RDWModel(object):
                 tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch, logits=self.output))
             self.loss = self.stack_loss + self.h1_loss + self.h2_loss
 
+            tf.summary.scalar('h1_loss', self.h1_loss)
+            tf.summary.scalar('h2_loss', self.h2_loss)
             tf.summary.scalar('loss', self.loss)
+            tf.summary.scalar('stack_loss', self.stack_loss)
 
         with tf.name_scope("Train"):
             self.train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(self.loss)
