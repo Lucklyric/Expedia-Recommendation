@@ -163,7 +163,12 @@ class RDWModel(object):
             self.net = self.add_fc_stack_layers(self.stack_features, [500, 500, 500])
         with tf.name_scope("Output"):
             self.stack_output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
-            self.output = self.h1_output + self.h2_output + self.stack_output
+            self.h1_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
+            self.h2_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
+            self.stack_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
+            self.output = tf.multiply(self.h1_output, self.h1_weight) + tf.multiply(self.h2_output,
+                                                                                    self.h2_weight) + tf.multiply(
+                self.stack_output, self.stack_weight)
         if MODE != TRAINING:
             return
         with tf.name_scope("Batch_eval"):
@@ -260,7 +265,7 @@ class RDWModel(object):
                 if step % 100 == 0:
                     saver.save(sess, "model/" + VERSION + "/model.ckpt")
                     print ("Step %d: loss= %.4f, h1_loss=%.4f, h2_loss=%.4f" % (
-                    step, loss_value, h1_loss_value, h2_loss_value))
+                        step, loss_value, h1_loss_value, h2_loss_value))
                 step += len(net_output)
         except tf.errors.OutOfRangeError:
             print ("Done training for %d epochs, %d steps." % (NUM_EPOCHS, step))
