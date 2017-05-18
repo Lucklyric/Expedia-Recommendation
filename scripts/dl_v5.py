@@ -11,8 +11,8 @@ import tensorflow.contrib.keras as keras
 TRAINING = 0
 TESTING = 1
 INFERENCE = 2
-VERSION = "v4"
-MODE = 2
+VERSION = "v5"
+MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
@@ -59,7 +59,7 @@ class RDWModel(object):
 
         with tf.name_scope("Input" + self.pos_fix):
             if MODE == TRAINING:
-                feature, label = read_and_decode("../data/train-13.tfrecords", num_epochs=NUM_EPOCHS)
+                feature, label = read_and_decode("../data/train-13-all-book-type.tfrecords", num_epochs=NUM_EPOCHS)
                 self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
@@ -75,21 +75,16 @@ class RDWModel(object):
                                                  capacity=2000,
                                                  allow_smaller_final_batch=True)
 
-        # Load test Data-set
-
-        #
-        # self.input = tf.placeholder(tf.float32, shape=[None, 24], name="user_input")
-        # self.target_label = tf.placeholder(tf.float32, shape=[None, 1])
         with tf.name_scope("Des_Embedding"):
 
-            # # Time duriation
+            # Time duriation
             # src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
             # src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
             # src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
             # src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
             # self.time_feature = tf.concat([src_ci_month, src_ci_day, src_co_day, src_co_month], axis=1)
             # self.time_feature = self.add_norm(self.time_feature, 4 * 8)
-            # self.time_feature = self.add_fc_stack_layers(self.time_feature, [64, 128, 256, 128])
+            # self.time_feature = self.add_fc_stack_layers(self.time_feature, [64, 128, 256, 128], norm=False)
 
             # Source
             # is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
@@ -99,20 +94,33 @@ class RDWModel(object):
             # posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
             # self.source_feature = tf.concat([is_mobile, is_package, channel, site_name, posa_continent], axis=1)
             # self.source_feature = self.add_norm(self.source_feature, 5 * 8)
-            # self.source_feature = self.add_fc_stack_layers(self.source_feature, [128, 256, 256, 128])
+            # self.source_feature = self.add_fc_stack_layers(self.source_feature, [128, 256, 256, 128], norm=False)
 
             # Destination
             des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
                                                            tf.cast(self.feature[:, 18], tf.int64))
             des_type_id = self.add_bucket_embedding(tf.cast(self.feature[:, 19], tf.int64), 100000, 8, "des_type_id")
+            self.h2_feature = tf.concat([des_embedding_feature, des_type_id], axis=1)
+            self.h2_feature = self.add_norm(self.h2_feature, 8 + 149)
+            self.h2_feature = self.add_fc_stack_layers(self.h2_feature, [256, 256])
+
+            self.h2_branch = self.add_fc_stack_layers(self.h2_feature, [500, 500])
+            self.h2_output = tc.layers.fully_connected(self.h2_branch, 100, activation_fn=None)
+            self.h2_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch,
+                                                                                         logits=self.h2_output))
 
             # Hotel info
-            h_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 22], tf.int64), 100, 8, "h_continent")
+            # h_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 22], tf.int64), 100, 8, "h_continent")
             h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
             h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
-            self.des_feature = tf.concat([des_embedding_feature, des_type_id, h_market, h_contry, h_continent], axis=1)
-            self.des_feature = self.add_norm(self.des_feature, 4 * 8 + 149)
-            self.des_feature = self.add_fc_stack_layers(self.des_feature, [256, 512, 512, 256])
+            self.h1_feature = tf.concat([h_market, h_contry], axis=1)
+            self.h1_feature = self.add_norm(self.h1_feature, 2 * 8)
+            self.h1_feature = self.add_fc_stack_layers(self.h1_feature, [128, 128])
+
+            self.h1_branch = self.add_fc_stack_layers(self.h1_feature, [256, 256])
+            self.h1_output = tc.layers.fully_connected(self.h1_branch, 100, activation_fn=None)
+            self.h1_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch,
+                                                                                         logits=self.h1_output))
 
             # User info
             u_loc_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 7], tf.int64), 1000, 8, "u_loc_contry")
@@ -123,38 +131,39 @@ class RDWModel(object):
             self.user_feature = self.add_fc_stack_layers(self.user_feature, [64, 128, 128])
 
             # Query Requirements
-            self.query_feature = tf.concat([self.feature[:, 15:18]], axis=1)
-            self.query_feature = self.add_norm(self.query_feature, 3)
-            self.query_feature = self.add_fc_stack_layers(self.query_feature, [64, 128, 256, 128])
-
-            # other feature
+            # self.query_feature = tf.concat([self.feature[:, 15:18]], axis=1)
+            # self.query_feature = self.add_norm(self.query_feature, 3)
+            # self.query_feature = self.add_fc_stack_layers(self.query_feature, [64, 128, 256, 128])
+            #
+            # # other feature
             # tran_month = self.add_bucket_embedding(tf.cast(self.feature[:, 4], tf.int64), 12, 8, "trans_month")
             # booking = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 8, "is_booking")
             # self.other_feature = tf.concat([tran_month, booking], axis=1)
-            # self.other_feature = self.add_norm(self.other_feature, 16)
+            # # self.other_feature = self.add_norm(self.other_feature, 16)
             # self.other_feature = self.add_fc_stack_layers(self.other_feature, [64, 128, 128])
-
-            # user id
-            user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 100000, 8, "user_id")
-            self.user_id_feature = self.add_norm(user_id, 8)
+            #
+            # # user id
+            # user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 1200000, 8, "user_id")
+            # self.user_id_feature = self.add_norm(user_id, 8)
 
             self.stack_features = tf.concat([
-                self.des_feature,
+                # self.time_feature,
+                # self.source_feature,
+                self.h1_feature,
                 self.user_feature,
-                self.query_feature,
-                self.user_id_feature], axis=1)
+                self.h2_feature,
+                # self.other_feature,
+                # self.user_id_feature
+            ], axis=1)
 
-            self.feature_weight = tf.Variable(tf.ones([self.stack_features.get_shape()[-1]], dtype=tf.float64))
-            self.stack_features = tf.multiply(self.stack_features, self.feature_weight)
+            # self.feature_weight = tf.Variable(tf.ones([self.stack_features.get_shape()[-1]], dtype=tf.float64))
+            # self.stack_features = tf.multiply(self.stack_features, self.feature_weight)
 
         with tf.name_scope("FC"):
-            self.net = self.add_fc_stack_layers(self.stack_features, [1024])
-            self.net = self.add_fc_stack_layers(self.stack_features, [1024])
-            self.net = self.add_fc_stack_layers(self.stack_features, [512])
-            self.net = self.add_fc_stack_layers(self.stack_features, [512])
-            self.net = self.add_fc_stack_layers(self.stack_features, [256])
+            self.net = self.add_fc_stack_layers(self.stack_features, [500, 500, 500])
         with tf.name_scope("Output"):
-            self.output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
+            self.stack_output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
+            self.output = self.h1_output + self.h2_output + self.stack_output
         if MODE != TRAINING:
             return
         with tf.name_scope("Batch_eval"):
@@ -174,8 +183,10 @@ class RDWModel(object):
             # self.loss = tf.reduce_mean(
             #     keras.backend.sparse_categorical_crossentropy(output=self.output, target=self.label_batch,
             #                                                   from_logits=True))
-            self.loss = tf.reduce_mean(
+            self.stack_loss = tf.reduce_mean(
                 tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch, logits=self.output))
+            self.loss = self.stack_loss + self.h1_loss + self.h2_loss
+
             tf.summary.scalar('loss', self.loss)
 
         with tf.name_scope("Train"):
@@ -241,13 +252,15 @@ class RDWModel(object):
         step = 0
         try:
             while True:
-                _, _, merged_summary, step_value, loss_value, net_output = sess.run(
-                    [self.train_op, self.increase_step, merged, self.global_step, self.loss, self.output])
+                _, _, merged_summary, step_value, loss_value, h1_loss_value, h2_loss_value, net_output = sess.run(
+                    [self.train_op, self.increase_step, merged, self.global_step, self.loss, self.h1_loss, self.h2_loss,
+                     self.output])
                 writer.add_summary(merged_summary, global_step=step_value)
 
                 if step % 100 == 0:
                     saver.save(sess, "model/" + VERSION + "/model.ckpt")
-                    print ("Step %d: loss= %.4f" % (step, loss_value))
+                    print ("Step %d: loss= %.4f, h1_loss=%.4f, h2_loss=%.4f" % (
+                    step, loss_value, h1_loss_value, h2_loss_value))
                 step += len(net_output)
         except tf.errors.OutOfRangeError:
             print ("Done training for %d epochs, %d steps." % (NUM_EPOCHS, step))
@@ -281,7 +294,7 @@ class RDWModel(object):
 
     def run_inference(self, sess):
         step = 0
-        o_file= open("output_" + VERSION + ".csv", "w")
+        o_file = open("output_" + VERSION + ".csv", "w")
         o_file.write("id,hotel_clusters\n")
         try:
             while True:
@@ -290,7 +303,7 @@ class RDWModel(object):
                     top_pred = row.argsort()[-5:]
                     write_p = " ".join([str(l) for l in top_pred])
                     write_frame = "{0},{1}".format(step, write_p)
-                    o_file.write(write_frame+"\n")
+                    o_file.write(write_frame + "\n")
 
                     step += 1
                 print step
