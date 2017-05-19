@@ -12,7 +12,7 @@ TRAINING = 0
 TESTING = 1
 INFERENCE = 2
 VERSION = "v5"
-MODE = 0
+MODE = 1
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
@@ -45,7 +45,7 @@ class RDWModel(object):
 
     def _build_model(self):
         if MODE == TRAINING:
-            self.dropout_prob = 0.65
+            self.dropout_prob = 1
             self.pos_fix = "train"
         else:
             self.dropout_prob = 1
@@ -169,13 +169,15 @@ class RDWModel(object):
             self.output = tf.multiply(self.h1_output, self.h1_weight) + tf.multiply(self.h2_output,
                                                                                     self.h2_weight) + tf.multiply(
                 self.stack_output, self.stack_weight)
-        if MODE != TRAINING:
+        if MODE == INFERENCE:
             return
         with tf.name_scope("Batch_eval"):
             self.num_correct_prediction = tf.reduce_sum(
                 tf.cast(tf.equal(self.label_batch, tf.argmax(self.output, 1)), tf.float32))
             self.mAP, self.mAP_update = tc.metrics.streaming_sparse_average_precision_at_k(self.output,
                                                                                            self.label_batch, 5)
+        if MODE == TESTING:
+            return
 
         with tf.name_scope("Loss"):
             # self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float64)
