@@ -16,7 +16,7 @@ MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.00001
 
 
 def read_and_decode(filename, num_epochs=1):
@@ -58,6 +58,7 @@ class RDWModel(object):
                 name="des_embedding")
 
         with tf.name_scope("Input" + self.pos_fix):
+            self.learning_rate = tf.placeholder(tf.float64, name="LR")
             if MODE == TRAINING:
                 feature, label = read_and_decode(["../data/train-13-all-book-type.tfrecords"], num_epochs=NUM_EPOCHS)
                 self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
@@ -200,7 +201,7 @@ class RDWModel(object):
             tf.summary.scalar('stack_loss', self.stack_loss)
 
         with tf.name_scope("Train"):
-            self.train_op = tf.train.AdamOptimizer(LEARNING_RATE).minimize(self.loss)
+            self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
             self.increase_step = self.global_step.assign_add(1)
 
     def _add_fc_layer(self, layer_input, size, activation_fn=tf.nn.relu, dropout=True, norm=True):
@@ -264,7 +265,9 @@ class RDWModel(object):
             while True:
                 _, _, merged_summary, step_value, loss_value, h1_loss_value, h2_loss_value, net_output = sess.run(
                     [self.train_op, self.increase_step, merged, self.global_step, self.loss, self.h1_loss, self.h2_loss,
-                     self.output])
+                     self.output], feed_dict={
+                        self.learning_rate: LEARNING_RATE
+                    })
                 writer.add_summary(merged_summary, global_step=step_value)
 
                 if step % 100 == 0:
