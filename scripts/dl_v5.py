@@ -12,7 +12,7 @@ TRAINING = 0
 TESTING = 1
 INFERENCE = 2
 VERSION = "v5"
-MODE = 1
+MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
@@ -59,122 +59,118 @@ class RDWModel(object):
 
         with tf.name_scope("Input" + self.pos_fix):
             if MODE == TRAINING:
-                feature, label = read_and_decode(["../data/train-13-all-book-type.tfrecords",
-                                                  "../data/train-14-all-book-type.tfrecords"], num_epochs=NUM_EPOCHS)
-                                                  self.feature, self.label_batch = tf.train.shuffle_batch(
-                    [feature, label], batch_size=128, num_threads=3,
-                    capacity=2000,
-                    min_after_dequeue=1000,
-                    allow_smaller_final_batch=False)
-                elif MODE == TESTING:
+                feature, label = read_and_decode(["../data/train-13-all-book-type.tfrecords"], num_epochs=NUM_EPOCHS)
+                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
+                                                                        capacity=2000,
+                                                                        min_after_dequeue=1000,
+                                                                        allow_smaller_final_batch=False)
+            elif MODE == TESTING:
                 feature, label = read_and_decode(["../data/train-14.tfrecords"])
                 self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=512, num_threads=3,
                                                                 capacity=2000,
                                                                 allow_smaller_final_batch=True)
-                elif MODE == INFERENCE:
+            elif MODE == INFERENCE:
                 feature, label = read_and_decode(["../data/evl.tfrecords"])
                 self.feature, _ = tf.train.batch([feature, label], batch_size=1024, num_threads=3,
                                                  capacity=2000,
                                                  allow_smaller_final_batch=True)
 
-                with tf.name_scope("Des_Embedding"):
+        with tf.name_scope("Des_Embedding"):
 
-                # Time duriation
-                # src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
-                # src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
-                # src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
-                # src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
-                # self.time_feature = tf.concat([src_ci_month, src_ci_day, src_co_day, src_co_month], axis=1)
-                # self.time_feature = self.add_norm(self.time_feature, 4 * 8)
-                # self.time_feature = self.add_fc_stack_layers(self.time_feature, [64, 128, 256, 128], norm=False)
+            # Time duriation
+            # src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
+            # src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
+            # src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
+            # src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
+            # self.time_feature = tf.concat([src_ci_month, src_ci_day, src_co_day, src_co_month], axis=1)
+            # self.time_feature = self.add_norm(self.time_feature, 4 * 8)
+            # self.time_feature = self.add_fc_stack_layers(self.time_feature, [64, 128, 256, 128], norm=False)
 
-                # Source
-                # is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
-                # is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 2, 8, "is_package")
-                # channel = self.add_bucket_embedding(tf.cast(self.feature[:, 14], tf.int64), 10000, 8, "channel")
-                # site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
-                # posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
-                # self.source_feature = tf.concat([is_mobile, is_package, channel, site_name, posa_continent], axis=1)
-                # self.source_feature = self.add_norm(self.source_feature, 5 * 8)
-                # self.source_feature = self.add_fc_stack_layers(self.source_feature, [128, 256, 256, 128], norm=False)
+            # Source
+            # is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
+            # is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 2, 8, "is_package")
+            # channel = self.add_bucket_embedding(tf.cast(self.feature[:, 14], tf.int64), 10000, 8, "channel")
+            # site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
+            # posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
+            # self.source_feature = tf.concat([is_mobile, is_package, channel, site_name, posa_continent], axis=1)
+            # self.source_feature = self.add_norm(self.source_feature, 5 * 8)
+            # self.source_feature = self.add_fc_stack_layers(self.source_feature, [128, 256, 256, 128], norm=False)
 
-                # Destination
-                    des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
-                                                                   tf.cast(self.feature[:, 18], tf.int64))
-                des_type_id = self.add_bucket_embedding(tf.cast(self.feature[:, 19], tf.int64), 100000, 8,
-                                                        "des_type_id")
-                self.h2_feature = tf.concat([des_embedding_feature, des_type_id], axis=1)
-                self.h2_feature = self.add_norm(self.h2_feature, 8 + 149)
-                self.h2_feature = self.add_fc_stack_layers(self.h2_feature, [256, 256])
+            # Destination
+            des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
+                                                           tf.cast(self.feature[:, 18], tf.int64))
+            des_type_id = self.add_bucket_embedding(tf.cast(self.feature[:, 19], tf.int64), 100000, 8, "des_type_id")
+            self.h2_feature = tf.concat([des_embedding_feature, des_type_id], axis=1)
+            self.h2_feature = self.add_norm(self.h2_feature, 8 + 149)
+            self.h2_feature = self.add_fc_stack_layers(self.h2_feature, [256, 256])
 
-                self.h2_branch = self.add_fc_stack_layers(self.h2_feature, [500, 500])
-                self.h2_output = tc.layers.fully_connected(self.h2_branch, 100, activation_fn=None)
-                self.h2_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch,
-                                                                                             logits=self.h2_output))
+            self.h2_branch = self.add_fc_stack_layers(self.h2_feature, [500, 500])
+            self.h2_output = tc.layers.fully_connected(self.h2_branch, 100, activation_fn=None)
+            self.h2_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch,
+                                                                                         logits=self.h2_output))
 
-                # Hotel info
-                # h_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 22], tf.int64), 100, 8, "h_continent")
-                h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
-                h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
-                self.h1_feature = tf.concat([h_market, h_contry], axis=1)
-                self.h1_feature = self.add_norm(self.h1_feature, 2 * 8)
-                self.h1_feature = self.add_fc_stack_layers(self.h1_feature, [128, 128])
+            # Hotel info
+            # h_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 22], tf.int64), 100, 8, "h_continent")
+            h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
+            h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
+            self.h1_feature = tf.concat([h_market, h_contry], axis=1)
+            self.h1_feature = self.add_norm(self.h1_feature, 2 * 8)
+            self.h1_feature = self.add_fc_stack_layers(self.h1_feature, [128, 128])
 
-                self.h1_branch = self.add_fc_stack_layers(self.h1_feature, [256, 256])
-                self.h1_output = tc.layers.fully_connected(self.h1_branch, 100, activation_fn=None)
-                self.h1_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch,
-                                                                                             logits=self.h1_output))
+            self.h1_branch = self.add_fc_stack_layers(self.h1_feature, [256, 256])
+            self.h1_output = tc.layers.fully_connected(self.h1_branch, 100, activation_fn=None)
+            self.h1_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.label_batch,
+                                                                                         logits=self.h1_output))
 
-                # User info
-                u_loc_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 7], tf.int64), 1000, 8, "u_loc_contry")
-                u_loc_region = self.add_bucket_embedding(tf.cast(self.feature[:, 8], tf.int64), 100000, 8,
-                                                         "u_loc_region")
-                u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
-                self.user_feature = tf.concat([u_loc_city, u_loc_region, u_loc_contry, self.feature[:, 10:11]], axis=1)
-                self.user_feature = self.add_norm(self.user_feature, 3 * 8 + 1)
-                self.user_feature = self.add_fc_stack_layers(self.user_feature, [64, 128, 128])
+            # User info
+            u_loc_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 7], tf.int64), 1000, 8, "u_loc_contry")
+            u_loc_region = self.add_bucket_embedding(tf.cast(self.feature[:, 8], tf.int64), 100000, 8, "u_loc_region")
+            u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
+            self.user_feature = tf.concat([u_loc_city, u_loc_region, u_loc_contry, self.feature[:, 10:11]], axis=1)
+            self.user_feature = self.add_norm(self.user_feature, 3 * 8 + 1)
+            self.user_feature = self.add_fc_stack_layers(self.user_feature, [64, 128, 128])
 
-                # Query Requirements
-                # self.query_feature = tf.concat([self.feature[:, 15:18]], axis=1)
-                # self.query_feature = self.add_norm(self.query_feature, 3)
-                # self.query_feature = self.add_fc_stack_layers(self.query_feature, [64, 128, 256, 128])
-                #
-                # # other feature
-                # tran_month = self.add_bucket_embedding(tf.cast(self.feature[:, 4], tf.int64), 12, 8, "trans_month")
-                # booking = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 8, "is_booking")
-                # self.other_feature = tf.concat([tran_month, booking], axis=1)
-                # # self.other_feature = self.add_norm(self.other_feature, 16)
-                # self.other_feature = self.add_fc_stack_layers(self.other_feature, [64, 128, 128])
-                #
-                # # user id
-                # user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 1200000, 8, "user_id")
-                # self.user_id_feature = self.add_norm(user_id, 8)
+            # Query Requirements
+            # self.query_feature = tf.concat([self.feature[:, 15:18]], axis=1)
+            # self.query_feature = self.add_norm(self.query_feature, 3)
+            # self.query_feature = self.add_fc_stack_layers(self.query_feature, [64, 128, 256, 128])
+            #
+            # # other feature
+            # tran_month = self.add_bucket_embedding(tf.cast(self.feature[:, 4], tf.int64), 12, 8, "trans_month")
+            # booking = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 8, "is_booking")
+            # self.other_feature = tf.concat([tran_month, booking], axis=1)
+            # # self.other_feature = self.add_norm(self.other_feature, 16)
+            # self.other_feature = self.add_fc_stack_layers(self.other_feature, [64, 128, 128])
+            #
+            # # user id
+            # user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 1200000, 8, "user_id")
+            # self.user_id_feature = self.add_norm(user_id, 8)
 
-                self.stack_features = tf.concat([
-                    # self.time_feature,
-                    # self.source_feature,
-                    self.h1_feature,
-                    self.user_feature,
-                    self.h2_feature,
-                    # self.other_feature,
-                    # self.user_id_feature
-                ], axis=1)
+            self.stack_features = tf.concat([
+                # self.time_feature,
+                # self.source_feature,
+                self.h1_feature,
+                self.user_feature,
+                self.h2_feature,
+                # self.other_feature,
+                # self.user_id_feature
+            ], axis=1)
 
-                # self.feature_weight = tf.Variable(tf.ones([self.stack_features.get_shape()[-1]], dtype=tf.float64))
-                # self.stack_features = tf.multiply(self.stack_features, self.feature_weight)
+            # self.feature_weight = tf.Variable(tf.ones([self.stack_features.get_shape()[-1]], dtype=tf.float64))
+            # self.stack_features = tf.multiply(self.stack_features, self.feature_weight)
 
-                with tf.name_scope("FC"):
-                    self.net = self.add_fc_stack_layers(self.stack_features, [500, 500, 500])
-                with tf.name_scope("Output"):
-                    self.stack_output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
-                self.h1_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
-                self.h2_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
-                self.stack_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
-                self.output = tf.multiply(self.h1_output, self.h1_weight) + tf.multiply(self.h2_output,
-                                                                                        self.h2_weight) + tf.multiply(
-                    self.stack_output, self.stack_weight)
-                if MODE == INFERENCE:
-                return
+        with tf.name_scope("FC"):
+            self.net = self.add_fc_stack_layers(self.stack_features, [500, 500, 500])
+        with tf.name_scope("Output"):
+            self.stack_output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
+            self.h1_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
+            self.h2_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
+            self.stack_weight = tf.Variable(tf.ones([1], dtype=tf.float64))
+            self.output = tf.multiply(self.h1_output, self.h1_weight) + tf.multiply(self.h2_output,
+                                                                                    self.h2_weight) + tf.multiply(
+                self.stack_output, self.stack_weight)
+        if MODE == INFERENCE:
+            return
         with tf.name_scope("Batch_eval"):
             self.num_correct_prediction = tf.reduce_sum(
                 tf.cast(tf.equal(self.label_batch, tf.argmax(self.output, 1)), tf.float32))
