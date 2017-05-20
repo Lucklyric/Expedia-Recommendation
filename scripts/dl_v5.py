@@ -16,7 +16,7 @@ MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
-LEARNING_RATE = 0.00001
+LEARNING_RATE = 0.01
 
 
 def read_and_decode(filename, num_epochs=1):
@@ -72,7 +72,7 @@ class RDWModel(object):
                                                                 allow_smaller_final_batch=True)
             elif MODE == INFERENCE:
                 feature, label = read_and_decode(["../data/evl.tfrecords"])
-                self.feature, _ = tf.train.batch([feature, label], batch_size=1024, num_threads=3,
+                self.feature, _ = tf.train.batch([feature, label], batch_size=1024, num_threads=1,
                                                  capacity=2000,
                                                  allow_smaller_final_batch=True)
 
@@ -207,8 +207,8 @@ class RDWModel(object):
     def _add_fc_layer(self, layer_input, size, activation_fn=tf.nn.relu, dropout=True, norm=True):
         output = tc.layers.fully_connected(layer_input, size, activation_fn=activation_fn)
 
-        if norm:
-            output = self.add_norm(output, size=size)
+        # if norm:
+        #     output = self.add_norm(output, size=size)
         if dropout is True:
             output = tf.nn.dropout(output, self.dropout_prob)
         return output
@@ -229,40 +229,41 @@ class RDWModel(object):
 
     @staticmethod
     def add_norm(layer_input, size):
-        scale = tf.Variable(tf.ones([size], dtype=tf.float64))
-        shift = tf.Variable(tf.zeros([size], dtype=tf.float64))
-        pop_mean = tf.Variable(tf.zeros([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
-        pop_var = tf.Variable(tf.ones([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
-        epsilon = 0.001
-        if MODE == TRAINING:
-            # batch_mean, batch_var = tf.nn.moments(layer_input, axes=[0])
-            fc_mean, fc_var = tf.nn.moments(layer_input, axes=[0])
-
-            ema = tf.train.ExponentialMovingAverage(decay=0.5)
-
-            def mean_var_with_update():
-                ema_apply_op = ema.apply([fc_mean, fc_var])
-                with tf.control_dependencies([ema_apply_op, tf.assign(pop_var, fc_var), tf.assign(pop_mean, fc_mean)]):
-                    return tf.identity(fc_mean), tf.identity(fc_var)
-
-            mean, var = mean_var_with_update()
-            layer_output = tf.nn.batch_normalization(layer_input, mean, var, shift, scale, epsilon)
-            # decay = 0.5
-            # train_mean = tf.assign(pop_mean,
-            #                        pop_mean * decay + batch_mean * (1 - decay))
-            # train_var = tf.assign(pop_var,
-            #                       pop_var * decay + batch_var * (1 - decay))
-            # with tf.control_dependencies([train_mean, train_var]):
-            #     return tf.nn.batch_normalization(layer_input,
-            #                                      pop_mean, pop_var, shift, scale, epsilon)
-        else:
-            layer_output = tf.nn.batch_normalization(layer_input, pop_mean, pop_var, shift, scale, epsilon)
+        layer_output = layer_input
+        # scale = tf.Variable(tf.ones([size], dtype=tf.float64))
+        # shift = tf.Variable(tf.zeros([size], dtype=tf.float64))
+        # pop_mean = tf.Variable(tf.zeros([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
+        # pop_var = tf.Variable(tf.ones([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
+        # epsilon = 0.001
+        # if MODE == TRAINING:
+        #     # batch_mean, batch_var = tf.nn.moments(layer_input, axes=[0])
+        #     fc_mean, fc_var = tf.nn.moments(layer_input, axes=[0])
+        #
+        #     ema = tf.train.ExponentialMovingAverage(decay=0.5)
+        #
+        #     def mean_var_with_update():
+        #         ema_apply_op = ema.apply([fc_mean, fc_var])
+        #         with tf.control_dependencies([ema_apply_op, tf.assign(pop_var, fc_var), tf.assign(pop_mean, fc_mean)]):
+        #             return tf.identity(fc_mean), tf.identity(fc_var)
+        #
+        #     mean, var = mean_var_with_update()
+        #     layer_output = tf.nn.batch_normalization(layer_input, mean, var, shift, scale, epsilon)
+        #     # decay = 0.5
+        #     # train_mean = tf.assign(pop_mean,
+        #     #                        pop_mean * decay + batch_mean * (1 - decay))
+        #     # train_var = tf.assign(pop_var,
+        #     #                       pop_var * decay + batch_var * (1 - decay))
+        #     # with tf.control_dependencies([train_mean, train_var]):
+        #     #     return tf.nn.batch_normalization(layer_input,
+        #     #                                      pop_mean, pop_var, shift, scale, epsilon)
+        # else:
+        #     layer_output = tf.nn.batch_normalization(layer_input, pop_mean, pop_var, shift, scale, epsilon)
         return layer_output
 
     def run_train(self, sess):
         step = 0
         try:
-            while True:
+            while not coord.should_stop():
                 _, _, merged_summary, step_value, loss_value, h1_loss_value, h2_loss_value, net_output = sess.run(
                     [self.train_op, self.increase_step, merged, self.global_step, self.loss, self.h1_loss, self.h2_loss,
                      self.output], feed_dict={
@@ -277,12 +278,14 @@ class RDWModel(object):
                 step += len(net_output)
         except tf.errors.OutOfRangeError:
             print ("Done training for %d epochs, %d steps." % (NUM_EPOCHS, step))
+        finally:
+            coord.request_stop()
 
     def run_evl(self, sess):
         step = 0
         correnct_entry = 0.0
         try:
-            while True:
+            while not coord.should_stop():
                 # sess.run(self.mAP_update)
                 mAP, _, net_output, feature_value, target_label, num_correct = sess.run(
                     [self.mAP, self.mAP_update, self.output, self.feature, self.label_batch,
@@ -304,13 +307,15 @@ class RDWModel(object):
                 NUM_EPOCHS, step, mAP, correnct_entry / step))
             # print ("Done training for %d epochs, %d steps %f mAP" % (
             #     NUM_EPOCHS, step, mAP))
+        finally:
+            coord.request_stop()
 
     def run_inference(self, sess):
         step = 0
         o_file = open("output_" + VERSION + ".csv", "w")
         o_file.write("id,hotel_clusters\n")
         try:
-            while True:
+            while not coord.should_stop():
                 net_output = sess.run(self.output)
                 for row in net_output:
                     top_pred = row.argsort()[-5:]
@@ -322,7 +327,9 @@ class RDWModel(object):
                 print step
         except tf.errors.OutOfRangeError:
             print ("Done for inferencefro %d epochs, %d steps." % (1, step))
+        finally:
             o_file.close()
+            coord.request_stop()
 
 
 if __name__ == "__main__":
@@ -353,19 +360,16 @@ if __name__ == "__main__":
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=session, coord=coord)
             model.run_train(session)
-            coord.request_stop()
             coord.join(threads)
         elif MODE == TESTING:
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=session, coord=coord)
             model.run_evl(session)
-            coord.request_stop()
             coord.join(threads)
         elif MODE == INFERENCE:
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=session, coord=coord)
             model.run_inference(session)
-            coord.request_stop()
             coord.join(threads)
 
         session.close()
