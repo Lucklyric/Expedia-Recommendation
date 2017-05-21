@@ -16,7 +16,7 @@ MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.0001
 
 
 def read_and_decode(filename, num_epochs=1):
@@ -61,7 +61,7 @@ class RDWModel(object):
             self.learning_rate = tf.placeholder(tf.float64, name="LR")
             if MODE == TRAINING:
                 feature, label = read_and_decode(["../data/train-13-all-book-type.tfrecords"], num_epochs=NUM_EPOCHS)
-                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
+                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=256, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
                                                                         allow_smaller_final_batch=False)
@@ -186,12 +186,17 @@ class RDWModel(object):
             self.b4_loss = tf.reduce_mean(
                 tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_hotel_country,
                                                                labels=self.label_batch))
-            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
-                                                                                      labels=self.label_batch))
-            # self.loss = (tf.multiply(self.b1_loss, self.b1_weight) + \
-            #              tf.multiply(self.b2_loss, self.b2_weight) + \
-            #              tf.multiply(self.b3_loss, self.b3_weight) + \
-            #              tf.multiply(self.b4_loss, self.b4_weight)) * 0.5 + 0.5 * self.combine_loss
+            self.stack_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.stack_output,
+                                                                                            labels=self.label_batch))
+
+            self.fusion_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
+                                                                                             labels=self.label_batch))
+
+            self.loss = 0.5 * (self.b1_loss +
+                               self.b2_loss +
+                               self.b3_loss +
+                               self.b4_loss +
+                               self.stack_loss) + self.fusion_loss
 
             tf.summary.scalar('b1_loss', self.b1_loss)
             tf.summary.scalar('b1_weight', self.weights[0])
@@ -201,8 +206,10 @@ class RDWModel(object):
             tf.summary.scalar('b3_weight', self.weights[2])
             tf.summary.scalar('b4_loss', self.b4_loss)
             tf.summary.scalar('b4_weight', self.weights[3])
-            tf.summary.scalar('loss', self.loss)
+            tf.summary.scalar('stack_loss', self.stack_loss)
             tf.summary.scalar('b5_weight', self.weights[4])
+            tf.summary.scalar('fussion', self.fusion_loss)
+            tf.summary.scalar('loss', self.loss)
 
         with tf.name_scope("Train"):
             self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
@@ -210,6 +217,7 @@ class RDWModel(object):
             self.b2_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b2_loss)
             self.b3_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b3_loss)
             self.b4_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b4_loss)
+            self.stack_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b4_loss)
             self.increase_step = self.global_step.assign_add(1)
 
     def _add_fc_layer(self, layer_input, size, activation_fn=tf.nn.relu, dropout=True, norm=True):
@@ -263,11 +271,12 @@ class RDWModel(object):
         step = 0
         try:
             while not coord.should_stop():
-                _, _, _, _, _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
-                b3_loss_value, b4_loss_value = sess.run(
+                _, _, _, _, _, _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
+                b3_loss_value, b4_loss_value, stack_loss_value, fusion_loss_value = sess.run(
                     [self.train_op, self.b1_train_op, self.b2_train_op, self.b3_train_op, self.b4_train_op,
+                     self.stack_train_op,
                      self.increase_step, merged, self.global_step, self.loss, self.b1_loss,
-                     self.b2_loss, self.b3_loss, self.b4_loss
+                     self.b2_loss, self.b3_loss, self.b4_loss, self.stack_loss, self.fusion_loss
                      ], feed_dict={
                         self.learning_rate: LEARNING_RATE
                     })
@@ -277,8 +286,10 @@ class RDWModel(object):
                 if step % 10 == 0:
                     saver.save(sess, "model/" + VERSION + "/model.ckpt")
                     print (
-                        "Step %d: loss= %.4f, b1_loss=%.4f, b2_loss=%.4f, b3_loss=%.4f, b4_loss=%.4f" % (
-                            step, loss_value, b1_loss_value, b2_loss_value, b3_loss_value, b4_loss_value))
+                        "Step %d: loss= %.4f, fusion_loss=%.4f, stack_loss=%.4f, b1_loss=%.4f, b2_loss=%.4f, b3_loss=%.4f, b4_loss=%.4f" % (
+                            step, loss_value, fusion_loss_value, stack_loss_value, b1_loss_value, b2_loss_value,
+                            b3_loss_value,
+                            b4_loss_value))
         except tf.errors.OutOfRangeError:
             print ("Done training for %d epochs, %d steps." % (NUM_EPOCHS, step))
         finally:
