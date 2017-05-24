@@ -16,7 +16,7 @@ MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
-LEARNING_RATE = 0.00001
+LEARNING_RATE = 0.000001
 
 
 def read_and_decode(filename, num_epochs=1):
