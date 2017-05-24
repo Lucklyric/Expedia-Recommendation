@@ -11,12 +11,12 @@ import tensorflow.contrib.keras as keras
 TRAINING = 0
 TESTING = 1
 INFERENCE = 2
-VERSION = "v7"
+VERSION = "v9"
 MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
-LEARNING_RATE = 0.0001
+LEARNING_RATE = 0.00001
 
 
 def read_and_decode(filename, num_epochs=1):
@@ -60,7 +60,8 @@ class RDWModel(object):
         with tf.name_scope("Input" + self.pos_fix):
             self.learning_rate = tf.placeholder(tf.float64, name="LR")
             if MODE == TRAINING:
-                feature, label = read_and_decode(["../data/train-13-all-book-type.tfrecords"], num_epochs=NUM_EPOCHS)
+                feature, label = read_and_decode(["../data/train-13-all-book-type.tfrecords"],
+                                                 num_epochs=NUM_EPOCHS)
                 self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=256, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
@@ -80,14 +81,11 @@ class RDWModel(object):
 
             # booking type
             booking_type = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 4, "booking_type")
-            booking_type = self.add_norm(booking_type)
-            booking_type = self.add_fc_stack_layers(booking_type, [50, 50])
+            # booking_type = self.add_norm(booking_type)
 
             # user location city
             u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
-            u_loc_city = self.add_norm(u_loc_city)
-            u_loc_city = self.add_fc_stack_layers(u_loc_city, [50, 50])
-            # u_loc_city = self.add_norm(self.feature[:, 9:10])
+            # u_loc_city = self.add_norm(u_loc_city)
 
             # orig destination distance
             orig_destination_distance = self.feature[:, 10:11]
@@ -96,46 +94,47 @@ class RDWModel(object):
             # orig destination
             des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
                                                            tf.cast(self.feature[:, 18], tf.int64))
-            des_embedding_feature = self.add_norm(des_embedding_feature)
-            des_embedding_feature = self.add_fc_stack_layers(des_embedding_feature, [128, 256])
-            # des_embedding_feature = self.add_norm(self.feature[:, 18:19])
+            # des_embedding_feature = self.add_norm(des_embedding_feature)
 
             h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
-            h_contry = self.add_norm(h_contry)
-            h_contry = self.add_fc_stack_layers(h_contry, [50, 50])
-            # h_contry = self.add_norm(self.feature[:, 23:24])
+            # h_contry = self.add_norm(h_contry)
 
             h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
-            h_market = self.add_norm(h_market)
-            h_market = self.add_fc_stack_layers(h_market, [50, 50])
-            # h_market = self.add_norm(self.feature[:, 24:25])
+            # h_market = self.add_norm(h_market)
+
+            # user id
+            user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 1200000, 8, "user_id")
+            # self.user_id_feature = self.add_norm(user_id)
 
         with tf.name_scope("FC"):
             # branch od ulc
             self.branch_od_ulc = self.add_fc_stack_layers(tf.concat([orig_destination_distance,
-                                                                     u_loc_city, booking_type], axis=1), [512, 512, 512]
+                                                                     u_loc_city, booking_type, user_id], axis=1),
+                                                          [512, 512, 512]
                                                           )
 
             # branch dest features
             self.branch_search_dest = self.add_fc_stack_layers(tf.concat([des_embedding_feature,
                                                                           h_contry,
-                                                                          h_market, booking_type], axis=1),
+                                                                          h_market, booking_type, user_id], axis=1),
                                                                [512, 512, 512]
                                                                )
 
             # search des id only
             self.branch_search_dest_only = self.add_fc_stack_layers(
-                tf.concat([des_embedding_feature, booking_type], axis=1), [512, 512, 512])
+                tf.concat([des_embedding_feature, booking_type, user_id], axis=1), [512, 512, 512])
 
             # hotel country
-            self.branch_hotel_country = self.add_fc_stack_layers(tf.concat([h_contry, booking_type], axis=1),
+            self.branch_hotel_country = self.add_fc_stack_layers(tf.concat([h_contry, booking_type, user_id], axis=1),
                                                                  [512, 512])
 
             self.stack_features = tf.concat([
                 self.branch_od_ulc,
                 self.branch_search_dest,
                 self.branch_search_dest_only,
-                self.branch_hotel_country
+                self.branch_hotel_country,
+                user_id,
+                booking_type,
             ], axis=1)
 
             self.stack_net = self.add_fc_stack_layers(self.stack_features, [512, 512, 512])
@@ -146,23 +145,29 @@ class RDWModel(object):
             self.b3_weight = tf.Variable(tf.ones([], dtype=tf.float64))
             self.b4_weight = tf.Variable(tf.ones([], dtype=tf.float64))
             self.b5_weight = tf.Variable(tf.ones([], dtype=tf.float64))
-            self.weights = tf.nn.softmax(
-                tf.stack([self.b1_weight, self.b2_weight, self.b3_weight, self.b4_weight, self.b5_weight], axis=-1))
+            # self.weights = tf.nn.softmax(
+            #     tf.stack([self.b1_weight, self.b2_weight, self.b3_weight, self.b4_weight, self.b5_weight], axis=-1))
 
-            self.branch_od_ulc_output = tc.layers.fully_connected(self.branch_od_ulc, 100, activation_fn=None)
-            self.branch_search_dest_output = tc.layers.fully_connected(self.branch_search_dest, 100, activation_fn=None)
+            self.branch_od_ulc_output = tc.layers.fully_connected(self.branch_od_ulc, 100, activation_fn=tf.nn.sigmoid)
+            self.branch_search_dest_output = tc.layers.fully_connected(self.branch_search_dest, 100,
+                                                                       activation_fn=tf.nn.sigmoid)
             self.branch_search_dest_only_output = tc.layers.fully_connected(self.branch_search_dest_only, 100,
-                                                                            activation_fn=None)
+                                                                            activation_fn=tf.nn.sigmoid)
             self.branch_hotel_country_output = tc.layers.fully_connected(self.branch_hotel_country, 100,
-                                                                         activation_fn=None)
+                                                                         activation_fn=tf.nn.sigmoid)
             self.stack_output = tc.layers.fully_connected(self.stack_net, 100,
-                                                          activation_fn=None)
+                                                          activation_fn=tf.nn.sigmoid)
 
-            self.output = tf.scalar_mul(self.weights[0], self.branch_od_ulc_output) \
-                          + tf.scalar_mul(self.weights[1], self.branch_search_dest_output) \
-                          + tf.scalar_mul(self.weights[2], self.branch_search_dest_only_output) \
-                          + tf.scalar_mul(self.weights[3], self.branch_hotel_country_output) \
-                          + tf.scalar_mul(self.weights[4], self.stack_output)
+            # self.output = tf.scalar_mul(self.weights[0], self.branch_od_ulc_output) \
+            #               + tf.scalar_mul(self.weights[1], self.branch_search_dest_output) \
+            #               + tf.scalar_mul(self.weights[2], self.branch_search_dest_only_output) \
+            #               + tf.scalar_mul(self.weights[3], self.branch_hotel_country_output) \
+            #               + tf.scalar_mul(self.weights[4], self.stack_output)
+
+            self.raw_output = self.branch_search_dest_only_output + self.branch_hotel_country_output + \
+                          self.branch_od_ulc_output + self.stack_output + self.branch_search_dest_output
+
+            self.output = tc.layers.fully_connected(self.raw_output, 100, activation_fn=tf.nn.sigmoid)
         if MODE == INFERENCE:
             return
         with tf.name_scope("Batch_eval"):
@@ -174,51 +179,58 @@ class RDWModel(object):
             return
 
         with tf.name_scope("Loss"):
-            self.b1_loss = tf.reduce_mean(
-                tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_od_ulc_output,
-                                                               labels=self.label_batch))
-            self.b2_loss = tf.reduce_mean(
-                tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_search_dest_output,
-                                                               labels=self.label_batch))
-            self.b3_loss = tf.reduce_mean(
-                tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_search_dest_only_output,
-                                                               labels=self.label_batch))
-            self.b4_loss = tf.reduce_mean(
-                tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_hotel_country,
-                                                               labels=self.label_batch))
-            self.stack_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.stack_output,
-                                                                                            labels=self.label_batch))
 
-            self.fusion_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
-                                                                                             labels=self.label_batch))
+            self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float64)
 
-            self.loss = 0.5 * (self.b1_loss +
-                               self.b2_loss +
-                               self.b3_loss +
-                               self.b4_loss +
-                               self.stack_loss) + self.fusion_loss
+            self.label_weight = tf.add(self.label_vector, 0.05)
+
+            self.b1_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
+                keras.backend.binary_crossentropy(output=self.branch_od_ulc_output, target=self.label_vector),
+                self.label_weight), axis=1))
+
+            self.b2_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
+                keras.backend.binary_crossentropy(output=self.branch_search_dest_output, target=self.label_vector),
+                self.label_weight), axis=1))
+
+            self.b3_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
+                keras.backend.binary_crossentropy(output=self.branch_search_dest_only_output,
+                                                  target=self.label_vector), self.label_weight), axis=1))
+
+            self.b4_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
+                keras.backend.binary_crossentropy(output=self.branch_hotel_country_output, target=self.label_vector),
+                self.label_weight), axis=1))
+
+            self.stack_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
+                keras.backend.binary_crossentropy(output=self.stack_output, target=self.label_vector),
+                self.label_weight), axis=1))
+
+            self.fusion_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
+                keras.backend.binary_crossentropy(output=self.output, target=self.label_vector),
+                self.label_weight), axis=1))
+
+            self.loss = self.fusion_loss
 
             tf.summary.scalar('b1_loss', self.b1_loss)
-            tf.summary.scalar('b1_weight', self.weights[0])
+            # tf.summary.scalar('b1_weight', self.weights[0])
             tf.summary.scalar('b2_loss', self.b2_loss)
-            tf.summary.scalar('b2_weight', self.weights[1])
+            # tf.summary.scalar('b2_weight', self.weights[1])
             tf.summary.scalar('b3_loss', self.b3_loss)
-            tf.summary.scalar('b3_weight', self.weights[2])
+            # tf.summary.scalar('b3_weight', self.weights[2])
             tf.summary.scalar('b4_loss', self.b4_loss)
-            tf.summary.scalar('b4_weight', self.weights[3])
+            # tf.summary.scalar('b4_weight', self.weights[3])
             tf.summary.scalar('stack_loss', self.stack_loss)
-            tf.summary.scalar('b5_weight', self.weights[4])
+            # tf.summary.scalar('b5_weight', self.weights[4])
             tf.summary.scalar('fussion', self.fusion_loss)
             tf.summary.scalar('loss', self.loss)
 
-        with tf.name_scope("Train"):
-            self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
-            self.b1_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b1_loss)
-            self.b2_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b2_loss)
-            self.b3_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b3_loss)
-            self.b4_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b4_loss)
-            self.stack_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b4_loss)
-            self.increase_step = self.global_step.assign_add(1)
+            with tf.name_scope("Train"):
+                self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
+                self.b1_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b1_loss)
+                self.b2_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b2_loss)
+                self.b3_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b3_loss)
+                self.b4_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b4_loss)
+                self.stack_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.stack_loss)
+                self.increase_step = self.global_step.assign_add(1)
 
     def _add_fc_layer(self, layer_input, size, activation_fn=tf.nn.relu, dropout=True, norm=True):
         output = tc.layers.fully_connected(layer_input, size, activation_fn=activation_fn)
@@ -280,6 +292,14 @@ class RDWModel(object):
                      ], feed_dict={
                         self.learning_rate: LEARNING_RATE
                     })
+                # _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
+                # b3_loss_value, b4_loss_value, stack_loss_value, fusion_loss_value = sess.run(
+                #     [self.train_op,
+                #      self.increase_step, merged, self.global_step, self.loss, self.b1_loss,
+                #      self.b2_loss, self.b3_loss, self.b4_loss, self.stack_loss, self.fusion_loss
+                #      ], feed_dict={
+                #         self.learning_rate: LEARNING_RATE
+                #     })
                 writer.add_summary(merged_summary, global_step=step_value)
                 step = step_value
 
