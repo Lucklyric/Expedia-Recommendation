@@ -11,7 +11,7 @@ import tensorflow.contrib.keras as keras
 TRAINING = 0
 TESTING = 1
 INFERENCE = 2
-VERSION = "v10"
+VERSION = "v11"
 MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
@@ -63,6 +63,7 @@ class RDWModel(object):
 
         with tf.name_scope("Input" + self.pos_fix):
             self.learning_rate = tf.placeholder(tf.float64, name="LR")
+            self.learning_rate_recorder = tf.Variable(LEARNING_RATE, dtype=tf.float64, name="LR_Recorder")
             if MODE == TRAINING:
                 feature, label = read_and_decode(["../data/train-13.tfrecords"],
                                                  num_epochs=NUM_EPOCHS)
@@ -153,11 +154,11 @@ class RDWModel(object):
             self.stack_net = self.add_fc_stack_layers(self.stack_features, [512, 512, 512])
 
         with tf.name_scope("Output"):
-            self.b1_weight = tf.Variable(tf.ones([], dtype=tf.float64))
-            self.b2_weight = tf.Variable(tf.ones([], dtype=tf.float64))
-            self.b3_weight = tf.Variable(tf.ones([], dtype=tf.float64))
-            self.b4_weight = tf.Variable(tf.ones([], dtype=tf.float64))
-            self.b5_weight = tf.Variable(tf.ones([], dtype=tf.float64))
+            # self.b1_weight = tf.Variable(tf.ones([], dtype=tf.float64))
+            # self.b2_weight = tf.Variable(tf.ones([], dtype=tf.float64))
+            # self.b3_weight = tf.Variable(tf.ones([], dtype=tf.float64))
+            # self.b4_weight = tf.Variable(tf.ones([], dtype=tf.float64))
+            # self.b5_weight = tf.Variable(tf.ones([], dtype=tf.float64))
             # self.weights = tf.nn.softmax(
             #     tf.stack([self.b1_weight, self.b2_weight, self.b3_weight, self.b4_weight, self.b5_weight], axis=-1))
 
@@ -192,6 +193,7 @@ class RDWModel(object):
 
             self.output = self.add_fc_stack_layers(self.raw_output, [128, 256])
             self.output = tc.layers.fully_connected(self.raw_output, 100, activation_fn=None)
+            self.update_lr = tf.assign(self.learning_rate_recorder, self.learning_rate)
 
         if MODE == INFERENCE:
             return
@@ -247,14 +249,15 @@ class RDWModel(object):
             tf.summary.scalar('stack_loss', self.stack_loss)
             # tf.summary.scalar('b5_weight', self.weights[4])
             tf.summary.scalar('fussion', self.fusion_loss)
+            tf.summary.scalar('LR', self.learning_rate_recorder)
             tf.summary.scalar('loss', self.loss)
 
             with tf.name_scope("Train"):
                 self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
-                self.b1_train_op = tf.train.AdamOptimizer(self.learning_rate/2).minimize(self.b1_loss)
-                self.b2_train_op = tf.train.AdamOptimizer(self.learning_rate/2).minimize(self.b2_loss)
-                self.b3_train_op = tf.train.AdamOptimizer(self.learning_rate/2).minimize(self.b3_loss)
-                self.b4_train_op = tf.train.AdamOptimizer(self.learning_rate/2).minimize(self.b4_loss)
+                self.b1_train_op = tf.train.AdamOptimizer(self.learning_rate / 2).minimize(self.b1_loss)
+                self.b2_train_op = tf.train.AdamOptimizer(self.learning_rate / 2).minimize(self.b2_loss)
+                self.b3_train_op = tf.train.AdamOptimizer(self.learning_rate / 2).minimize(self.b3_loss)
+                self.b4_train_op = tf.train.AdamOptimizer(self.learning_rate / 2).minimize(self.b4_loss)
                 self.stack_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.stack_loss)
                 self.increase_step = self.global_step.assign_add(1)
 
@@ -307,16 +310,19 @@ class RDWModel(object):
 
     def run_train(self, sess):
         step = 0
+        previous_losses = []
+        learning_rate_value = self.learning_rate_recorder.eval(sess)
         try:
             while not coord.should_stop():
-                _, _, _, _, _, _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
+                _, _, _, _, _, _, _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
                 b3_loss_value, b4_loss_value, stack_loss_value, fusion_loss_value = sess.run(
-                    [self.train_op, self.b1_train_op, self.b2_train_op, self.b3_train_op, self.b4_train_op,
+                    [self.update_lr, self.train_op, self.b1_train_op, self.b2_train_op, self.b3_train_op,
+                     self.b4_train_op,
                      self.stack_train_op,
                      self.increase_step, merged, self.global_step, self.loss, self.b1_loss,
                      self.b2_loss, self.b3_loss, self.b4_loss, self.stack_loss, self.fusion_loss
                      ], feed_dict={
-                        self.learning_rate: LEARNING_RATE
+                        self.learning_rate: learning_rate_value
                     })
                 # _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
                 # b3_loss_value, b4_loss_value, stack_loss_value, fusion_loss_value = sess.run(
@@ -326,6 +332,11 @@ class RDWModel(object):
                 #      ], feed_dict={
                 #         self.learning_rate: LEARNING_RATE
                 #     })
+                previous_losses.append(fusion_loss_value)
+                if len(previous_losses) > 7.0 and fusion_loss_value > max(
+                        previous_losses[-8:]) and learning_rate_value > 0.00001:
+                    print ("decay learning rate!!!")
+                    learning_rate_value /= 2.0
                 writer.add_summary(merged_summary, global_step=step_value)
                 step = step_value
 
