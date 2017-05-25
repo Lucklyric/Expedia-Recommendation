@@ -16,7 +16,7 @@ MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
-LEARNING_RATE = 0.00001
+LEARNING_RATE = 0.01
 
 
 def read_and_decode(filename, num_epochs=1):
@@ -57,14 +57,14 @@ class RDWModel(object):
                 tf.convert_to_tensor(np.load("../data/destinations.npy"), dtype=tf.float64), trainable=False,
                 name="des_embedding")
 
-            self.p_cluster = tf.Variable(tf.convert_to_tensor(np.load("../data/p_cluster.npy"), dtype=tf.float64),
-                                         trainable=False, name="p_cluster")
-            self.p_cluster = tf.reshape(self.p_cluster, [100])
+            # self.p_cluster = tf.Variable(tf.convert_to_tensor(np.load("../data/p_cluster.npy"), dtype=tf.float64),
+            #                              trainable=False, name="p_cluster")
+            # self.p_cluster = tf.reshape(self.p_cluster, [100])
 
         with tf.name_scope("Input" + self.pos_fix):
             self.learning_rate = tf.placeholder(tf.float64, name="LR")
             if MODE == TRAINING:
-                feature, label = read_and_decode(["../data/train-13-all-book-type.tfrecords"],
+                feature, label = read_and_decode(["../data/train-13.tfrecords"],
                                                  num_epochs=NUM_EPOCHS)
                 self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=256, num_threads=3,
                                                                         capacity=2000,
@@ -273,12 +273,6 @@ class RDWModel(object):
         out = inputs
         for size in layer_configure:
             out = self._add_fc_layer(out, size, dropout=(MODE == TRAINING), norm=norm)
-        return out
-
-    def bayes_output(self, inputs):
-        out = inputs * self.p_cluster
-        # p_b = tf.reduce_sum(out)
-        # out = out / p_b
         return out
 
     @staticmethod
