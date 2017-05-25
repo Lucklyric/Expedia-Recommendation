@@ -193,8 +193,6 @@ class RDWModel(object):
             self.output = self.add_fc_stack_layers(self.raw_output, [128, 256])
             self.output = tc.layers.fully_connected(self.raw_output, 100, activation_fn=None)
 
-        if MODE != TRAINING:
-            self.output = self.bayes_output(self.output)
         if MODE == INFERENCE:
             return
         with tf.name_scope("Batch_eval"):
