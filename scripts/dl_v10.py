@@ -11,8 +11,8 @@ import tensorflow.contrib.keras as keras
 TRAINING = 0
 TESTING = 1
 INFERENCE = 2
-VERSION = "v9"
-MODE = 1
+VERSION = "v10"
+MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
@@ -45,7 +45,7 @@ class RDWModel(object):
 
     def _build_model(self):
         if MODE == TRAINING:
-            self.dropout_prob = 1
+            self.dropout_prob = 0.66
             self.pos_fix = "train"
         else:
             self.dropout_prob = 1
@@ -56,6 +56,10 @@ class RDWModel(object):
             self.destination_embedding = tf.Variable(
                 tf.convert_to_tensor(np.load("../data/destinations.npy"), dtype=tf.float64), trainable=False,
                 name="des_embedding")
+
+            self.p_cluster = tf.Variable(tf.convert_to_tensor(np.load("../data/p_cluster.npy"), dtype=tf.float64),
+                                         trainable=False, name="p_cluster")
+            self.p_cluster = tf.reshape(self.p_cluster, [100])
 
         with tf.name_scope("Input" + self.pos_fix):
             self.learning_rate = tf.placeholder(tf.float64, name="LR")
@@ -78,6 +82,15 @@ class RDWModel(object):
                                                  allow_smaller_final_batch=True)
 
         with tf.name_scope("Des_Embedding"):
+
+            # Date Feature
+            # src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
+            # src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
+            # src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
+            # src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
+            # self.time_feature = tf.concat([src_ci_month, src_ci_day, src_co_day, src_co_month], axis=1)
+            # self.time_feature = self.add_norm(self.time_feature)
+            # self.time_feature = self.add_fc_stack_layers(self.time_feature, [64, 128, 256, 128])
 
             # booking type
             booking_type = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 4, "booking_type")
@@ -149,14 +162,23 @@ class RDWModel(object):
             #     tf.stack([self.b1_weight, self.b2_weight, self.b3_weight, self.b4_weight, self.b5_weight], axis=-1))
 
             self.branch_od_ulc_output = tc.layers.fully_connected(self.branch_od_ulc, 100, activation_fn=tf.nn.sigmoid)
+            # self.branch_od_ulc_output = self.bayes_output(self.branch_od_ulc_output)
+
             self.branch_search_dest_output = tc.layers.fully_connected(self.branch_search_dest, 100,
                                                                        activation_fn=tf.nn.sigmoid)
+            # self.branch_search_dest_output = self.bayes_output(self.branch_search_dest_output)
+
             self.branch_search_dest_only_output = tc.layers.fully_connected(self.branch_search_dest_only, 100,
                                                                             activation_fn=tf.nn.sigmoid)
+            # self.branch_search_dest_only_output = self.bayes_output(self.branch_search_dest_only_output)
+
             self.branch_hotel_country_output = tc.layers.fully_connected(self.branch_hotel_country, 100,
                                                                          activation_fn=tf.nn.sigmoid)
+            # self.branch_hotel_country_output = self.bayes_output(self.branch_hotel_country_output)
+
             self.stack_output = tc.layers.fully_connected(self.stack_net, 100,
-                                                          activation_fn=tf.nn.sigmoid)
+                                                          activation_fn=None)
+            # self.stack_output = self.bayes_output(self.stack_output)
 
             # self.output = tf.scalar_mul(self.weights[0], self.branch_od_ulc_output) \
             #               + tf.scalar_mul(self.weights[1], self.branch_search_dest_output) \
@@ -165,9 +187,14 @@ class RDWModel(object):
             #               + tf.scalar_mul(self.weights[4], self.stack_output)
 
             self.raw_output = self.branch_search_dest_only_output + self.branch_hotel_country_output + \
-                          self.branch_od_ulc_output + self.stack_output + self.branch_search_dest_output
+                              self.branch_od_ulc_output + tf.nn.softmax(
+                self.stack_output) + self.branch_search_dest_output
 
-            self.output = tc.layers.fully_connected(self.raw_output, 100, activation_fn=tf.nn.sigmoid)
+            self.output = self.add_fc_stack_layers(self.raw_output, [128, 256])
+            self.output = tc.layers.fully_connected(self.raw_output, 100, activation_fn=None)
+
+        if MODE != TRAINING:
+            self.output = self.bayes_output(self.output)
         if MODE == INFERENCE:
             return
         with tf.name_scope("Batch_eval"):
@@ -182,7 +209,7 @@ class RDWModel(object):
 
             self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float64)
 
-            self.label_weight = tf.add(self.label_vector, 0.05)
+            self.label_weight = tf.add(self.label_vector, 0.26)
 
             self.b1_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
                 keras.backend.binary_crossentropy(output=self.branch_od_ulc_output, target=self.label_vector),
@@ -200,13 +227,14 @@ class RDWModel(object):
                 keras.backend.binary_crossentropy(output=self.branch_hotel_country_output, target=self.label_vector),
                 self.label_weight), axis=1))
 
-            self.stack_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
-                keras.backend.binary_crossentropy(output=self.stack_output, target=self.label_vector),
-                self.label_weight), axis=1))
+            self.stack_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.stack_output,
+                                                                                            labels=self.label_batch))
+            # self.stack_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
+            #     keras.backend.binary_crossentropy(output=self.stack_output, target=self.label_vector),
+            #     self.label_weight), axis=1))
 
-            self.fusion_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
-                keras.backend.binary_crossentropy(output=self.output, target=self.label_vector),
-                self.label_weight), axis=1))
+            self.fusion_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
+                                                                                             labels=self.label_batch))
 
             self.loss = self.fusion_loss
 
@@ -245,6 +273,12 @@ class RDWModel(object):
         out = inputs
         for size in layer_configure:
             out = self._add_fc_layer(out, size, dropout=(MODE == TRAINING), norm=norm)
+        return out
+
+    def bayes_output(self, inputs):
+        out = inputs * self.p_cluster
+        # p_b = tf.reduce_sum(out)
+        # out = out / p_b
         return out
 
     @staticmethod
@@ -294,7 +328,7 @@ class RDWModel(object):
                     })
                 # _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
                 # b3_loss_value, b4_loss_value, stack_loss_value, fusion_loss_value = sess.run(
-                #     [self.train_op,
+                #     [self.b1_train_op,
                 #      self.increase_step, merged, self.global_step, self.loss, self.b1_loss,
                 #      self.b2_loss, self.b3_loss, self.b4_loss, self.stack_loss, self.fusion_loss
                 #      ], feed_dict={
