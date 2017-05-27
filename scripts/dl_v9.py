@@ -12,7 +12,7 @@ TRAINING = 0
 TESTING = 1
 INFERENCE = 2
 VERSION = "v9"
-MODE = 0
+MODE = 1
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
@@ -81,11 +81,11 @@ class RDWModel(object):
 
             # booking type
             booking_type = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 4, "booking_type")
-            # booking_type = self.add_norm(booking_type)
+            booking_type = self.add_norm(booking_type)
 
             # user location city
             u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
-            # u_loc_city = self.add_norm(u_loc_city)
+            u_loc_city = self.add_norm(u_loc_city)
 
             # orig destination distance
             orig_destination_distance = self.feature[:, 10:11]
@@ -94,17 +94,17 @@ class RDWModel(object):
             # orig destination
             des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
                                                            tf.cast(self.feature[:, 18], tf.int64))
-            # des_embedding_feature = self.add_norm(des_embedding_feature)
+            des_embedding_feature = self.add_norm(des_embedding_feature)
 
             h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
-            # h_contry = self.add_norm(h_contry)
+            h_contry = self.add_norm(h_contry)
 
             h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
-            # h_market = self.add_norm(h_market)
+            h_market = self.add_norm(h_market)
 
             # user id
             user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 1200000, 8, "user_id")
-            # self.user_id_feature = self.add_norm(user_id)
+            self.user_id_feature = self.add_norm(user_id)
 
         with tf.name_scope("FC"):
             # branch od ulc

@@ -16,7 +16,7 @@ MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
-LEARNING_RATE = 0.00001
+LEARNING_RATE = 0.001
 
 
 def read_and_decode(filename, num_epochs=1):
@@ -57,16 +57,12 @@ class RDWModel(object):
                 tf.convert_to_tensor(np.load("../data/destinations.npy"), dtype=tf.float64), trainable=False,
                 name="des_embedding")
 
-            self.p_cluster = tf.Variable(tf.convert_to_tensor(np.load("../data/p_cluster.npy"), dtype=tf.float64),
-                                         trainable=False, name="p_cluster")
-            self.p_cluster = tf.reshape(self.p_cluster, [100])
-
         with tf.name_scope("Input" + self.pos_fix):
             self.learning_rate = tf.placeholder(tf.float64, name="LR")
             if MODE == TRAINING:
                 feature, label = read_and_decode(["../data/train-13-all-book-type.tfrecords"],
                                                  num_epochs=NUM_EPOCHS)
-                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=256, num_threads=3,
+                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=128, num_threads=3,
                                                                         capacity=2000,
                                                                         min_after_dequeue=1000,
                                                                         allow_smaller_final_batch=False)
@@ -93,11 +89,13 @@ class RDWModel(object):
             # self.time_feature = self.add_fc_stack_layers(self.time_feature, [64, 128, 256, 128])
 
             # booking type
-            booking_type = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 4, "booking_type")
+            booking_type = self.feature[:, 20:21]
+            # booking_type = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 4, "booking_type")
             booking_type = self.add_norm(booking_type)
 
             # user location city
-            u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
+            u_loc_city = self.feature[:, 9:10]
+            # u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
             u_loc_city = self.add_norm(u_loc_city)
 
             # orig destination distance
@@ -105,18 +103,22 @@ class RDWModel(object):
             orig_destination_distance = self.add_norm(orig_destination_distance)
 
             # orig destination
-            des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
-                                                           tf.cast(self.feature[:, 18], tf.int64))
+            des_embedding_feature = self.feature[:, 18:19]
+            # des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
+            #                                                tf.cast(self.feature[:, 18], tf.int64))
             des_embedding_feature = self.add_norm(des_embedding_feature)
 
-            h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
+            h_contry = self.feature[:, 23:24]
+            # h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
             h_contry = self.add_norm(h_contry)
 
-            h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
+            h_market = self.feature[:, 24:25]
+            # h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
             h_market = self.add_norm(h_market)
 
             # user id
-            user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 1200000, 8, "user_id")
+            user_id = self.feature[:, 11:12]
+            # user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 1200000, 8, "user_id")
             self.user_id_feature = self.add_norm(user_id)
 
         with tf.name_scope("FC"):
@@ -253,10 +255,10 @@ class RDWModel(object):
 
             with tf.name_scope("Train"):
                 self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
-                self.b1_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b1_loss)
-                self.b2_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b2_loss)
-                self.b3_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b3_loss)
-                self.b4_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b4_loss)
+                self.b1_train_op = tf.train.AdamOptimizer(self.learning_rate / 2).minimize(self.b1_loss)
+                self.b2_train_op = tf.train.AdamOptimizer(self.learning_rate / 2).minimize(self.b2_loss)
+                self.b3_train_op = tf.train.AdamOptimizer(self.learning_rate / 2).minimize(self.b3_loss)
+                self.b4_train_op = tf.train.AdamOptimizer(self.learning_rate / 2).minimize(self.b4_loss)
                 self.stack_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.stack_loss)
                 self.increase_step = self.global_step.assign_add(1)
 
@@ -294,8 +296,8 @@ class RDWModel(object):
         size = layer_input.get_shape()[-1]
         scale = tf.Variable(tf.ones([size], dtype=tf.float64))
         shift = tf.Variable(tf.zeros([size], dtype=tf.float64))
-        pop_mean = tf.Variable(tf.zeros([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
-        pop_var = tf.Variable(tf.ones([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
+        # pop_mean = tf.Variable(tf.zeros([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
+        # pop_var = tf.Variable(tf.ones([layer_input.get_shape()[-1]], dtype=tf.float64), trainable=False)
         epsilon = 0.001
         if MODE == TRAINING:
             fc_mean, fc_var = tf.nn.moments(layer_input, axes=[0])
@@ -304,13 +306,13 @@ class RDWModel(object):
 
             def mean_var_with_update():
                 ema_apply_op = ema.apply([fc_mean, fc_var])
-                with tf.control_dependencies([ema_apply_op, tf.assign(pop_var, fc_var), tf.assign(pop_mean, fc_mean)]):
+                with tf.control_dependencies([ema_apply_op]):
                     return tf.identity(fc_mean), tf.identity(fc_var)
 
             mean, var = mean_var_with_update()
             layer_output = tf.nn.batch_normalization(layer_input, mean, var, shift, scale, epsilon)
-        else:
-            layer_output = tf.nn.batch_normalization(layer_input, pop_mean, pop_var, shift, scale, epsilon)
+        # else:
+        #     layer_output = tf.nn.batch_normalization(layer_input, pop_mean, pop_var, shift, scale, epsilon)
         return layer_output
 
     def run_train(self, sess):
