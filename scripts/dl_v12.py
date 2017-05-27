@@ -69,10 +69,14 @@ class RDWModel(object):
                 self.learning_rate_recorder = tf.Variable(LEARNING_RATE, dtype=tf.float32, name="LR_Recorder")
                 feature, label = read_and_decode(["../data/train-13.tfrecords"],
                                                  num_epochs=NUM_EPOCHS)
-                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=1024, num_threads=3,
-                                                                        capacity=2000,
-                                                                        min_after_dequeue=1000,
-                                                                        allow_smaller_final_batch=True)
+                self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=512, num_threads=3,
+                                                                capacity=1000 + 3 * 512,
+                                                                allow_smaller_final_batch=True)
+
+                # self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=512, num_threads=3,
+                #                                                         capacity=1000+3*512,
+                #                                                         min_after_dequeue=1000,
+                #                                                         allow_smaller_final_batch=True)
             elif MODE == TESTING:
                 feature, label = read_and_decode(["../data/train-14.tfrecords"])
                 self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=512, num_threads=3,
