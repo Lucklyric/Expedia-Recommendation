@@ -45,7 +45,7 @@ class RDWModel(object):
 
     def _build_model(self):
         if MODE == TRAINING:
-            self.dropout_prob = 1
+            self.dropout_prob = 0.66
             self.pos_fix = "train"
         else:
             self.dropout_prob = 1
@@ -306,8 +306,8 @@ class RDWModel(object):
 
         if norm:
             output = self.add_norm(output)
-        # if dropout is True:
-        #     output = tf.nn.dropout(output, self.dropout_prob)
+        if dropout is True:
+            output = tf.nn.dropout(output, self.dropout_prob)
         return output
 
     def add_fc_stack_layers(self, inputs, layer_configure, norm=True):
@@ -475,6 +475,7 @@ if __name__ == "__main__":
 
         merged = tf.summary.merge_all()
         writer = tf.summary.FileWriter("log/" + VERSION, session.graph)
+        # ckpt = tf.train.get_checkpoint_state("model/" + VERSION+"/best")
         ckpt = tf.train.get_checkpoint_state("model/" + VERSION)
 
         session.run(tf.global_variables_initializer())

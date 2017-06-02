@@ -145,6 +145,7 @@ class RDWModel(object):
         if MODE == TRAINING:
             self.update_lr = tf.assign(self.learning_rate_recorder, self.learning_rate)
             self.update_ll = tf.assign(self.lowest_loss, self.lowest_loss_value)
+            self.increase_step = self.global_step.assign_add(1)
 
         if MODE == INFERENCE:
             return
@@ -210,8 +211,9 @@ class RDWModel(object):
         # learning_rate_value = 0.001
         try:
             while not coord.should_stop():
-                _, _, _, _, _, _, fusion_loss_value, merged_summary, step_value, ll_value = sess.run(
-                    self.BF.m_train_ops + [self.BF.train_op, self.update_lr, self.BF.final_loss, merged,
+                _, _, _, _, _, _, _, fusion_loss_value, merged_summary, step_value, ll_value = sess.run(
+                    self.BF.m_train_ops + [self.BF.train_op, self.increase_step, self.update_lr, self.BF.final_loss,
+                                           merged,
                                            self.global_step, self.lowest_loss
                                            ], feed_dict={
                         self.learning_rate: learning_rate_value
