@@ -11,7 +11,7 @@ import tensorflow.contrib.keras as keras
 TRAINING = 0
 TESTING = 1
 INFERENCE = 2
-VERSION = "v12"
+VERSION = "v13"
 MODE = 0
 NUM_EPOCHS = 1000000
 # MODE = TESTING
@@ -32,9 +32,6 @@ def read_and_decode(filename, num_epochs=1):
 
     target_label = tf.cast(features['label'], tf.int64)
     input_feature = features['feature']  # Input shape batch_size x 25
-
-    # Drop user id content's
-    # input_feature = tf.concat([input_feature[:11], input_feature[12:]], axis=0)
 
     return input_feature, target_label
 
@@ -57,32 +54,31 @@ class RDWModel(object):
                 tf.convert_to_tensor(np.load("../data/destinations.npy"), dtype=tf.float32), trainable=False,
                 name="des_embedding")
 
-            # self.p_cluster = tf.Variable(tf.convert_to_tensor(np.load("../data/p_cluster.npy"), dtype=tf.float64),
-            #                              trainable=False, name="p_cluster")
-            # self.p_cluster = tf.reshape(self.p_cluster, [100])
-
         with tf.name_scope("Input" + self.pos_fix):
             self.learning_rate = tf.placeholder(tf.float32, name="LR")
             self.lowest_loss_value = tf.placeholder(tf.float32, [], name="LL")
             if MODE == TRAINING:
+                self.batch_size = 512
                 self.lowest_loss = tf.Variable(1e4, name="lowest_loss")
                 self.learning_rate_recorder = tf.Variable(LEARNING_RATE, dtype=tf.float32, name="LR_Recorder")
                 feature, label = read_and_decode(["../data/train-13.tfrecords"],
                                                  num_epochs=NUM_EPOCHS)
-                self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=512, num_threads=3,
-                                                                capacity=1000 + 3 * 512,
-                                                                allow_smaller_final_batch=True)
+                # self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=512, num_threads=3,
+                #                                                 capacity=1000 + 3 * 512,
+                #                                                 allow_smaller_final_batch=True)
 
-                # self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=512, num_threads=3,
-                #                                                         capacity=1000+3*512,
-                #                                                         min_after_dequeue=1000,
-                #                                                         allow_smaller_final_batch=True)
+                self.feature, self.label_batch = tf.train.shuffle_batch([feature, label], batch_size=512, num_threads=3,
+                                                                        capacity=1000 + 3 * 512,
+                                                                        min_after_dequeue=1000,
+                                                                        allow_smaller_final_batch=True)
             elif MODE == TESTING:
+                self.batch_size = 512
                 feature, label = read_and_decode(["../data/train-14.tfrecords"])
                 self.feature, self.label_batch = tf.train.batch([feature, label], batch_size=512, num_threads=3,
                                                                 capacity=2000,
                                                                 allow_smaller_final_batch=True)
             elif MODE == INFERENCE:
+                self.batch_size = 1024
                 feature, label = read_and_decode(["../data/evl.tfrecords"])
                 self.feature, _ = tf.train.batch([feature, label], batch_size=1024, num_threads=1,
                                                  capacity=2000,
@@ -95,9 +91,6 @@ class RDWModel(object):
             src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
             src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
             src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
-            time_feature = tf.concat([src_ci_month, src_ci_day, src_co_day, src_co_month], axis=1)
-            time_feature = self.add_norm(time_feature)
-            time_feature = self.add_fc_stack_layers(time_feature, [64, 128, 256, 128])
 
             # Source
             is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
@@ -105,119 +98,68 @@ class RDWModel(object):
             channel = self.add_bucket_embedding(tf.cast(self.feature[:, 14], tf.int64), 10000, 8, "channel")
             site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
             posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
-            source_feature = tf.concat([is_mobile, is_package, channel, site_name, posa_continent], axis=1)
-            source_feature = self.add_norm(source_feature)
-            source_feature = self.add_fc_stack_layers(source_feature, [128, 256, 256, 128])
 
             # booking type
-            booking_type = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 4, "booking_type")
-            booking_type = self.add_norm(booking_type)
+            booking_type = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 8, "booking_type")
+            # booking_type = self.add_norm(booking_type)
 
             # user location city
             u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
-            u_loc_city = self.add_norm(u_loc_city)
+            # u_loc_city = self.add_norm(u_loc_city)
 
             # orig destination distance
             orig_destination_distance = self.feature[:, 10:11]
-            orig_destination_distance = self.add_norm(orig_destination_distance)
+            orig_destination_distance = self.add_fc_stack_layers(orig_destination_distance, [8, 8])
+            # orig_destination_distance = self.add_norm(orig_destination_distance)
 
             # orig destination
             des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
                                                            tf.cast(self.feature[:, 18], tf.int64))
+
             des_embedding_feature = self.add_norm(des_embedding_feature)
+            des_embedding_feature = self.add_fc_stack_layers(des_embedding_feature, [128, 64, 8])
 
             h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
-            h_contry = self.add_norm(h_contry)
 
             h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
-            h_market = self.add_norm(h_market)
 
             # user id
             user_id = self.add_bucket_embedding(tf.cast(self.feature[:, 11], tf.int64), 1200000, 8, "user_id")
-            self.user_id_feature = self.add_norm(user_id)
 
             tran_month = self.add_bucket_embedding(tf.cast(self.feature[:, 4], tf.int64), 12, 8, "trans_month")
-            tran_month = self.add_norm(tran_month)
 
-        with tf.name_scope("FC"):
-            # branch od ulc
-            self.branch_od_ulc = self.add_fc_stack_layers(tf.concat([orig_destination_distance,
-                                                                     u_loc_city, booking_type, user_id], axis=1),
-                                                          [512, 512, 512]
-                                                          )
+            self.stack_features = tf.concat(
+                [src_ci_month, src_ci_day, src_co_month, src_co_day, is_mobile, is_package, channel, site_name,
+                 posa_continent, booking_type, u_loc_city, des_embedding_feature,
+                 des_embedding_feature, h_market, h_contry, user_id, tran_month, orig_destination_distance],
+                axis=1)  # [batch_size, 17*8]
 
-            # branch dest features
-            self.branch_search_dest = self.add_fc_stack_layers(tf.concat([des_embedding_feature,
-                                                                          h_contry,
-                                                                          h_market, booking_type, user_id], axis=1),
-                                                               [512, 512, 512]
-                                                               )
+            # Normal the features
+            self.stack_features = self.add_norm(self.stack_features)
 
-            # search des id only
-            self.branch_search_dest_only = self.add_fc_stack_layers(
-                tf.concat([des_embedding_feature, booking_type, user_id], axis=1), [512, 512, 512])
+            self.stack_features_seq = tf.reshape(self.stack_features, [-1, 18, 8], name="2_3D")  # [batch_size, 8, 17]
 
-            # hotel country
-            self.branch_hotel_country = self.add_fc_stack_layers(tf.concat([h_contry, booking_type, user_id], axis=1),
-                                                                 [512, 512])
+            # self.stack_features_seq = tf.transpose(self.stack_features, [0, 2, 1])
 
-            self.stack_features = tf.concat([
-                self.branch_od_ulc,
-                self.branch_search_dest,
-                self.branch_search_dest_only,
-                self.branch_hotel_country,
-                user_id,
-                booking_type,
-                time_feature,
-                source_feature,
-                tran_month
-            ], axis=1)
+        with tf.name_scope("RNN"):
+            with tf.variable_scope("RNN"):
+                def gen_cell():
+                    lstm_cell = tc.rnn.BasicLSTMCell(256, forget_bias=1.0, state_is_tuple=True)
+                    if MODE == TRAINING:
+                        lstm_cell = tc.rnn.DropoutWrapper(lstm_cell, output_keep_prob=1)
+                    return lstm_cell
 
-            self.stack_net = self.add_fc_stack_layers(self.stack_features, [512, 512, 512])
+                stacked_lstm = tc.rnn.MultiRNNCell([gen_cell() for _ in range(4)])
+                self.cell_init_state = stacked_lstm.zero_state(self.batch_size,
+                                                               dtype=tf.float32)
+                cell_outputs, cell_final_state = tf.nn.dynamic_rnn(
+                    stacked_lstm, self.stack_features_seq, initial_state=self.cell_init_state, time_major=False)
 
         with tf.name_scope("Output"):
-            self.b1_weight = tf.Variable(tf.ones([], dtype=tf.float32))
-            self.b2_weight = tf.Variable(tf.ones([], dtype=tf.float32))
-            self.b3_weight = tf.Variable(tf.ones([], dtype=tf.float32))
-            self.b4_weight = tf.Variable(tf.ones([], dtype=tf.float32))
-            self.b5_weight = tf.Variable(tf.ones([], dtype=tf.float32))
-            self.weights = tf.nn.softmax(
-                tf.stack([self.b1_weight, self.b2_weight, self.b3_weight, self.b4_weight, self.b5_weight], axis=-1))
+            self.net = tf.reshape(cell_outputs[:,-1, :], [-1, 256])
+            self.net = self.add_fc_stack_layers(self.net, [256, 256])
+            self.output = tc.layers.fully_connected(self.net, 100, activation_fn=None)
 
-            self.branch_od_ulc_output = tc.layers.fully_connected(self.branch_od_ulc, 100,
-                                                                  activation_fn=tf.nn.sigmoid)
-            # self.branch_od_ulc_output = self.bayes_output(self.branch_od_ulc_output)
-
-            self.branch_search_dest_output = tc.layers.fully_connected(self.branch_search_dest, 100,
-                                                                       activation_fn=tf.nn.sigmoid)
-            # self.branch_search_dest_output = self.bayes_output(self.branch_search_dest_output)
-
-            self.branch_search_dest_only_output = tc.layers.fully_connected(self.branch_search_dest_only, 100,
-                                                                            activation_fn=tf.nn.sigmoid)
-            # self.branch_search_dest_only_output = self.bayes_output(self.branch_search_dest_only_output)
-
-            self.branch_hotel_country_output = tc.layers.fully_connected(self.branch_hotel_country, 100,
-                                                                         activation_fn=tf.nn.sigmoid)
-            # self.branch_hotel_country_output = self.bayes_output(self.branch_hotel_country_output)
-
-            self.stack_output = tc.layers.fully_connected(self.stack_net, 100,
-                                                          activation_fn=None)
-            # self.stack_output = self.bayes_output(self.stack_output)
-
-            self.raw_output = tf.scalar_mul(self.weights[0], self.branch_od_ulc_output) \
-                              + tf.scalar_mul(self.weights[1], self.branch_search_dest_output) \
-                              + tf.scalar_mul(self.weights[2], self.branch_search_dest_only_output) \
-                              + tf.scalar_mul(self.weights[3], self.branch_hotel_country_output) \
-                              + tf.scalar_mul(self.weights[4], tf.nn.softmax(self.stack_output))
-
-            # self.raw_output = tf.nn.softmax(self.branch_search_dest_only_output) + tf.nn.softmax(
-            #     self.branch_hotel_country_output) + \
-            #                   tf.nn.softmax(self.branch_od_ulc_output) + tf.nn.softmax(
-            #     self.stack_output) + tf.nn.softmax(self.branch_search_dest_output)
-            self.raw_output = self.add_norm(self.raw_output)
-
-            self.output = self.add_fc_stack_layers(self.raw_output, [128, 256])
-            self.output = tc.layers.fully_connected(self.raw_output, 100, activation_fn=None)
             if MODE == TRAINING:
                 self.update_lr = tf.assign(self.learning_rate_recorder, self.learning_rate)
                 self.update_ll = tf.assign(self.lowest_loss, self.lowest_loss_value)
@@ -234,71 +176,13 @@ class RDWModel(object):
 
         with tf.name_scope("Loss"):
 
-            self.label_vector = tf.one_hot(self.label_batch, 100, dtype=tf.float32)
-
-            self.label_weight = tf.add(self.label_vector, 0.26)
-
-            self.b1_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
-                keras.backend.binary_crossentropy(output=self.branch_od_ulc_output, target=self.label_vector),
-                self.label_weight), axis=1))
-
-            self.b2_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
-                keras.backend.binary_crossentropy(output=self.branch_search_dest_output, target=self.label_vector),
-                self.label_weight), axis=1))
-
-            self.b3_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
-                keras.backend.binary_crossentropy(output=self.branch_search_dest_only_output,
-                                                  target=self.label_vector), self.label_weight), axis=1))
-
-            self.b4_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
-                keras.backend.binary_crossentropy(output=self.branch_hotel_country_output, target=self.label_vector),
-                self.label_weight), axis=1))
-
-            # self.b1_loss = tf.reduce_mean(
-            #     tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_od_ulc_output,
-            #                                                    labels=self.label_batch))
-            # self.b2_loss = tf.reduce_mean(
-            #     tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_search_dest_output,
-            #                                                    labels=self.label_batch))
-            # self.b3_loss = tf.reduce_mean(
-            #     tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_search_dest_only_output,
-            #                                                    labels=self.label_batch))
-            # self.b4_loss = tf.reduce_mean(
-            #     tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.branch_hotel_country,
-            #                                                    labels=self.label_batch))
-
-            self.stack_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.stack_output,
-                                                                                            labels=self.label_batch))
-            # self.stack_loss = tf.reduce_mean(tf.reduce_sum(tf.multiply(
-            #     keras.backend.binary_crossentropy(output=self.stack_output, target=self.label_vector),
-            #     self.label_weight), axis=1))
-
-            self.fusion_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
-                                                                                             labels=self.label_batch))
-
-            self.loss = self.fusion_loss
-
-            tf.summary.scalar('b1_loss', self.b1_loss)
-            tf.summary.scalar('b1_weight', self.weights[0])
-            tf.summary.scalar('b2_loss', self.b2_loss)
-            tf.summary.scalar('b2_weight', self.weights[1])
-            tf.summary.scalar('b3_loss', self.b3_loss)
-            tf.summary.scalar('b3_weight', self.weights[2])
-            tf.summary.scalar('b4_loss', self.b4_loss)
-            tf.summary.scalar('b4_weight', self.weights[3])
-            tf.summary.scalar('stack_loss', self.stack_loss)
-            tf.summary.scalar('b5_weight', self.weights[4])
-            tf.summary.scalar('fussion', self.fusion_loss)
+            self.loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.output,
+                                                                                      labels=self.label_batch))
             tf.summary.scalar('LR', self.learning_rate_recorder)
             tf.summary.scalar('loss', self.loss)
 
             with tf.name_scope("Train"):
                 self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
-                self.b1_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b1_loss)
-                self.b2_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b2_loss)
-                self.b3_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b3_loss)
-                self.b4_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.b4_loss)
-                self.stack_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.stack_loss)
                 self.increase_step = self.global_step.assign_add(1)
 
     def _add_fc_layer(self, layer_input, size, activation_fn=tf.nn.relu, dropout=True, norm=True):
@@ -352,17 +236,16 @@ class RDWModel(object):
         step = 0
         previous_losses = []
         learning_rate_value = self.learning_rate_recorder.eval(sess)
+        numpy_state = sess.run(self.cell_init_state)
         # learning_rate_value = 0.001
         try:
             while not coord.should_stop():
-                _, _, _, _, _, _, _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
-                b3_loss_value, b4_loss_value, stack_loss_value, fusion_loss_value, ll_value = sess.run(
-                    [self.update_lr, self.train_op, self.b1_train_op, self.b2_train_op, self.b3_train_op,
-                     self.b4_train_op,
-                     self.stack_train_op,
-                     self.increase_step, merged, self.global_step, self.loss, self.b1_loss,
-                     self.b2_loss, self.b3_loss, self.b4_loss, self.stack_loss, self.fusion_loss, self.lowest_loss
+
+                _, _, _, merged_summary, step_value, loss_value, ll_value = sess.run(
+                    [self.update_lr, self.train_op,
+                     self.increase_step, merged, self.global_step, self.loss, self.lowest_loss
                      ], feed_dict={
+                        self.cell_init_state: numpy_state,
                         self.learning_rate: learning_rate_value
                     })
                 # _, _, _, _, merged_summary, step_value, loss_value, b1_loss_value, b2_loss_value, \
@@ -382,28 +265,26 @@ class RDWModel(object):
                 #      ], feed_dict={
                 #         self.learning_rate: LEARNING_RATE
                 #     })
-                if ll_value > fusion_loss_value:
+                if ll_value > loss_value:
                     sess.run(self.update_ll, feed_dict={
-                        self.lowest_loss_value: fusion_loss_value
+                        self.lowest_loss_value: loss_value
                     })
                     saver.save(sess, "model/" + VERSION + "/best/model.ckpt")
                     print ("ll value model saved")
                 if step % 1000 == 0:
-                    if len(previous_losses) > 8.0 and fusion_loss_value > max(
+                    if len(previous_losses) > 8.0 and loss_value > max(
                             previous_losses[-9:]) and learning_rate_value > 0.00001:
                         print ("decay learning rate!!!")
                         learning_rate_value *= 0.5
-                previous_losses.append(fusion_loss_value)
+                previous_losses.append(loss_value)
                 writer.add_summary(merged_summary, global_step=step_value)
                 step = step_value
                 if step % 300 == 0:
                     saver.save(sess, "model/" + VERSION + "/model.ckpt")
                 if step % 50 == 0:
                     print (
-                        "Step %d: loss= %.4f, fusion_loss=%.4f, stack_loss=%.4f, b1_loss=%.4f, b2_loss=%.4f, b3_loss=%.4f, b4_loss=%.4f" % (
-                            step, loss_value, fusion_loss_value, stack_loss_value, b1_loss_value, b2_loss_value,
-                            b3_loss_value,
-                            b4_loss_value))
+                        "Step %d: loss= %.4f" % (
+                            step, loss_value))
         except tf.errors.OutOfRangeError:
             print ("Done training for %d epochs, %d steps." % (NUM_EPOCHS, step))
         finally:
