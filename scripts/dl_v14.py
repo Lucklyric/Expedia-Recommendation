@@ -92,40 +92,40 @@ class RDWModel(object):
         with tf.name_scope("Des_Embedding"):
 
             # Date Feature
-            src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
-            src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
-            src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
-            src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
-
-            # Source
-            is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
-            is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 2, 8, "is_package")
-            channel = self.add_bucket_embedding(tf.cast(self.feature[:, 14], tf.int64), 10000, 8, "channel")
-            site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
-            posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
-
-            # booking type
+            # src_ci_month = self.add_bucket_embedding(tf.cast(self.feature[:, 0], tf.int64), 12, 8, "src_ci_month")
+            # src_ci_day = self.add_bucket_embedding(tf.cast(self.feature[:, 1], tf.int64), 31, 8, "src_ci_day")
+            # src_co_month = self.add_bucket_embedding(tf.cast(self.feature[:, 2], tf.int64), 12, 8, "src_co_month")
+            # src_co_day = self.add_bucket_embedding(tf.cast(self.feature[:, 3], tf.int64), 31, 8, "src_co_day")
+            #
+            # # Source
+            # is_mobile = self.add_bucket_embedding(tf.cast(self.feature[:, 12], tf.int64), 2, 8, "is_mobile")
+            # is_package = self.add_bucket_embedding(tf.cast(self.feature[:, 13], tf.int64), 2, 8, "is_package")
+            # channel = self.add_bucket_embedding(tf.cast(self.feature[:, 14], tf.int64), 10000, 8, "channel")
+            # site_name = self.add_bucket_embedding(tf.cast(self.feature[:, 5], tf.int64), 1000, 8, "site_name")
+            # posa_continent = self.add_bucket_embedding(tf.cast(self.feature[:, 6], tf.int64), 100, 8, "posa_continent")
+            #
+            # # booking type
             booking_type = self.add_bucket_embedding(tf.cast(self.feature[:, 20], tf.int64), 2, 8, "booking_type")
             # booking_type = self.add_norm(booking_type)
-
-            # user location city
+            #
+            # # user location city
             u_loc_city = self.add_bucket_embedding(tf.cast(self.feature[:, 9], tf.int64), 100000, 8, "u_loc_city")
             # u_loc_city = self.add_norm(u_loc_city)
-
-            # orig destination distance
+            #
+            # # orig destination distance
             orig_destination_distance = self.feature[:, 10:11]
-            orig_destination_distance = self.add_fc_stack_layers(orig_destination_distance, [8, 8])
-            # orig_destination_distance = self.add_norm(orig_destination_distance)
-
-            # orig destination
-            des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
-                                                           tf.cast(self.feature[:, 18], tf.int64))
-
-            des_embedding_feature = self.add_norm(des_embedding_feature)
-            des_embedding_feature = self.add_fc_stack_layers(des_embedding_feature, [128, 64, 8])
-
+            # orig_destination_distance = self.add_fc_stack_layers(orig_destination_distance, [8, 8])
+            # # orig_destination_distance = self.add_norm(orig_destination_distance)
+            #
+            # # orig destination
+            # des_embedding_feature = tf.nn.embedding_lookup(self.destination_embedding,
+            #                                                tf.cast(self.feature[:, 18], tf.int64))
+            #
+            # des_embedding_feature = self.add_norm(des_embedding_feature)
+            # des_embedding_feature = self.add_fc_stack_layers(des_embedding_feature, [128, 64, 8])
+            #
             h_contry = self.add_bucket_embedding(tf.cast(self.feature[:, 23], tf.int64), 1000, 8, "h_contry")
-
+            #
             h_market = self.add_bucket_embedding(tf.cast(self.feature[:, 24], tf.int64), 100000, 8, "h_market")
 
             # user id
@@ -133,13 +133,18 @@ class RDWModel(object):
 
             tran_month = self.add_bucket_embedding(tf.cast(self.feature[:, 4], tf.int64), 12, 8, "trans_month")
 
+            # self.stack_features = tf.concat(
+            #     [src_ci_month, src_ci_day, src_co_month, src_co_day, is_mobile, is_package, channel, site_name,
+            #      posa_continent, booking_type, u_loc_city, des_embedding_feature,
+            #      des_embedding_feature, h_market, h_contry, user_id, tran_month, orig_destination_distance],
+            #     axis=1)  # [batch_size, 17*8]
             self.stack_features = tf.concat(
-                [src_ci_month, src_ci_day, src_co_month, src_co_day, is_mobile, is_package, channel, site_name,
-                 posa_continent, booking_type, u_loc_city, des_embedding_feature,
-                 des_embedding_feature, h_market, h_contry, user_id, tran_month, orig_destination_distance],
+                [user_id, tran_month, booking_type, u_loc_city, orig_destination_distance, h_contry, h_market],
                 axis=1)  # [batch_size, 17*8]
+            self.stack_features = self.add_norm(self.stack_features)
 
-            self.BF = BoostFlow(self.stack_features, MODE, [128, 256], 4, self.learning_rate, [256, 256],
+        with tf.name_scope("BoostFlow"):
+            self.BF = BoostFlow(self.stack_features, MODE, [128, 256], 3, self.learning_rate, [256, 256],
                                 self.label_batch, self.dropout_prob)
 
         if MODE == TRAINING:
@@ -211,7 +216,7 @@ class RDWModel(object):
         # learning_rate_value = 0.001
         try:
             while not coord.should_stop():
-                _, _, _, _, _, _, _, fusion_loss_value, merged_summary, step_value, ll_value = sess.run(
+                _, _, _, _, _, _, fusion_loss_value, merged_summary, step_value, ll_value = sess.run(
                     self.BF.m_train_ops + [self.BF.train_op, self.increase_step, self.update_lr, self.BF.final_loss,
                                            merged,
                                            self.global_step, self.lowest_loss

@@ -23,11 +23,15 @@ class BoostFlow(object):
         :return:
         """
         # weights
-        self.m_weights = tf.nn.softmax(
-            [tf.Variable(tf.ones([]), name="weight_m_" + str(m)) for m in xrange(self.num_M)])
+        with tf.variable_scope("m_weights"):
+            self.m_weights = tf.nn.softmax(
+                [tf.Variable(tf.ones([]), name="weight_m_" + str(m), trainable=False) for m in xrange(self.num_M)])
 
+        self.net = self.inputs
         # general layer config
-        self.net = self.add_fc_stack_layers(self.inputs, self.general_layer_config, is_training=(self.mode == 0))
+        with tf.name_scope("BF_general_layer"):
+            self.net = self.add_fc_stack_layers(self.net, self.general_layer_config, is_training=(self.mode == 0))
+
         self.one_hot_target = tf.one_hot(self.target_output, 100, dtype=tf.float32)
         self.m_targets = []
         self.m_targets.append(self.one_hot_target)
@@ -40,28 +44,35 @@ class BoostFlow(object):
 
         # for-loop M
         for m in xrange(self.num_M):
-            self.net = self.add_fc_stack_layers(self.net, self.between_m_config, is_training=(self.mode == 0))
-            m_output = self._add_fc_layer(self.net, 100, activation_fn=None, batch_norm=True,
-                                          is_training=(self.mode == 0))
-            self.m_outputs.append(m_output)
+            with tf.name_scope("BF_m" + str(m) + "_part"):
+                self.net = self.add_fc_stack_layers(self.net, self.between_m_config, is_training=(self.mode == 0))
+                m_output = self._add_fc_layer(self.net, 100, activation_fn=None, batch_norm=True,
+                                              is_training=(self.mode == 0))
+                self.m_outputs.append(m_output)
 
-            gap = self.m_targets[-1] - m_output
-            m_loss = tf.reduce_mean(tf.reduce_sum(tf.square(gap), axis=-1), axis=-1)
-            self.m_losses.append(m_loss)
+                gap = self.m_targets[-1] - m_output
+                m_loss = tf.reduce_mean(tf.reduce_sum(tf.square(gap), axis=-1), axis=-1)
+                self.m_losses.append(m_loss)
 
-            m_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(m_loss)
-            self.m_train_ops.append(m_train_op)
+                m_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.m_losses[-1])
+                self.m_train_ops.append(m_train_op)
 
-            self.m_targets.append(gap)
+                self.m_targets.append(gap)
+
+                tf.summary.scalar(str(m) + '_sub_loss', m_loss)
 
         self.final_output = self.m_outputs[0] * self.m_weights[0]
+        tf.summary.scalar('0_weight', self.m_weights[0])
         for m in xrange(self.num_M - 1):
             self.final_output += self.m_outputs[m + 1] * self.m_weights[m + 1]
+            tf.summary.scalar(str(m + 1) + '_weight', self.m_weights[m + 1])
 
-        self.final_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.target_output,
-                                                                                        logits=self.final_output))
+        with tf.name_scope("BF_final"):
+            self.final_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.target_output,
+                                                                                            logits=self.final_output))
+            tf.summary.scalar('final_loss', self.final_loss)
 
-        self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.final_loss)
+            self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.final_loss)
 
     def _add_fc_layer(self, layer_input, size, activation_fn=tf.nn.relu, batch_norm=True,
                       is_training=True):
