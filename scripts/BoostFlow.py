@@ -24,8 +24,10 @@ class BoostFlow(object):
         """
         # weights
         with tf.variable_scope("m_weights"):
-            self.m_weights = tf.nn.softmax(
-                [tf.Variable(tf.ones([]), name="weight_m_" + str(m), trainable=False) for m in xrange(self.num_M)])
+            # self.m_weights = tf.nn.softmax(
+            #     [tf.Variable(tf.ones([]), name="weight_m_" + str(m), trainable=False) for m in xrange(self.num_M)])
+            self.m_weights = [tf.Variable(tf.ones([]), name="weight_m_" + str(m), trainable=False) for m in
+                              xrange(self.num_M)]
 
         self.net = self.inputs
         # general layer config
@@ -51,7 +53,7 @@ class BoostFlow(object):
                 self.m_outputs.append(m_output)
 
                 gap = self.m_targets[-1] - m_output
-                m_loss = tf.reduce_mean(tf.reduce_sum(tf.square(gap), axis=-1), axis=-1)
+                m_loss = tf.reduce_mean(tf.reduce_mean(tf.abs(gap), axis=-1), axis=-1)
                 self.m_losses.append(m_loss)
 
                 m_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.m_losses[-1])
