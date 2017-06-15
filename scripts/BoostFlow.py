@@ -41,12 +41,12 @@ class BoostFlow(object):
         for m in xrange(self.num_M):
             with tf.name_scope("BF_m" + str(m) + "_part"):
                 self.net = self.add_fc_stack_layers(self.net, self.between_m_config, is_training=(self.mode == 0))
-                m_output = self._add_fc_layer(self.net, 100, activation_fn=None, batch_norm=True,
+                m_output = self._add_fc_layer(self.net, 100, activation_fn=tf.nn.sigmoid, batch_norm=True,
                                               is_training=(self.mode == 0))
                 self.m_outputs.append(m_output)
 
                 gap = self.m_targets[-1] - m_output
-                m_loss = tf.reduce_mean(tf.reduce_mean(tf.abs(gap), axis=-1), axis=-1)
+                m_loss = tf.reduce_mean(tf.reduce_sum(tf.abs(gap), axis=-1), axis=-1)
                 self.m_losses.append(m_loss)
 
                 m_train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.m_losses[-1])
@@ -58,7 +58,7 @@ class BoostFlow(object):
 
         self.final_output = self.m_outputs[0]
         for m in xrange(self.num_M - 1):
-            self.final_output += self.m_outputs[m + 1] * self.m_weights[m + 1]
+            self.final_output += self.m_outputs[m + 1]
 
         with tf.name_scope("BF_final"):
             self.final_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.target_output,
