@@ -22,13 +22,6 @@ class BoostFlow(object):
         Build model graph
         :return:
         """
-        # weights
-        with tf.variable_scope("m_weights"):
-            # self.m_weights = tf.nn.softmax(
-            #     [tf.Variable(tf.ones([]), name="weight_m_" + str(m), trainable=False) for m in xrange(self.num_M)])
-            self.m_weights = [tf.Variable(tf.ones([]), name="weight_m_" + str(m), trainable=False) for m in
-                              xrange(self.num_M)]
-
         self.net = self.inputs
         # general layer config
         with tf.name_scope("BF_general_layer"):
@@ -63,11 +56,9 @@ class BoostFlow(object):
 
                 tf.summary.scalar(str(m) + '_sub_loss', m_loss)
 
-        self.final_output = self.m_outputs[0] * self.m_weights[0]
-        tf.summary.scalar('0_weight', self.m_weights[0])
+        self.final_output = self.m_outputs[0]
         for m in xrange(self.num_M - 1):
             self.final_output += self.m_outputs[m + 1] * self.m_weights[m + 1]
-            tf.summary.scalar(str(m + 1) + '_weight', self.m_weights[m + 1])
 
         with tf.name_scope("BF_final"):
             self.final_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.target_output,
