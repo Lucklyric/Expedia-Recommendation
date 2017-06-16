@@ -41,7 +41,7 @@ class BoostFlow(object):
         for m in xrange(self.num_M):
             with tf.name_scope("BF_m" + str(m) + "_part"):
                 self.net = self.add_fc_stack_layers(self.net, self.between_m_config, is_training=(self.mode == 0))
-                m_output = self._add_fc_layer(self.net, 100, activation_fn=tf.nn.sigmoid, batch_norm=True,
+                m_output = self._add_fc_layer(self.net, 100, activation_fn=None, batch_norm=True,
                                               is_training=(self.mode == 0))
                 self.m_outputs.append(m_output)
 
@@ -80,8 +80,8 @@ class BoostFlow(object):
         """
         layer_output = tc.layers.fully_connected(layer_input, size, activation_fn=activation_fn)
 
-        if batch_norm:
-            layer_output = self.add_norm(layer_output, size, is_training)
+        # if batch_norm:
+        #     layer_output = self.add_norm(layer_output, size, is_training)
         if is_training:
             layer_output = tf.nn.dropout(layer_output, self.keep_prob)
 

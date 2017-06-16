@@ -13,11 +13,11 @@ TRAINING = 0
 TESTING = 1
 INFERENCE = 2
 VERSION = "v14"
-MODE = 0
+MODE = TESTING
 NUM_EPOCHS = 1000000
 # MODE = TESTING
 # NUM_EPOCHS = 1
-LEARNING_RATE = 0.01
+LEARNING_RATE = 0.001
 
 
 def read_and_decode(filename, num_epochs=1):
@@ -46,7 +46,7 @@ class RDWModel(object):
 
     def _build_model(self):
         if MODE == TRAINING:
-            self.dropout_prob = 0.66
+            self.dropout_prob = 0.5
             self.pos_fix = "train"
         else:
             self.dropout_prob = 1
@@ -165,8 +165,8 @@ class RDWModel(object):
     def _add_fc_layer(self, layer_input, size, activation_fn=tf.nn.relu, dropout=True, norm=True):
         output = tc.layers.fully_connected(layer_input, size, activation_fn=activation_fn)
 
-        if norm:
-            output = self.add_norm(output)
+        # if norm:
+        #     output = self.add_norm(output)
         if dropout is True:
             output = tf.nn.dropout(output, self.dropout_prob)
         return output
@@ -216,8 +216,8 @@ class RDWModel(object):
         # learning_rate_value = 0.001
         try:
             while not coord.should_stop():
-                _, _, _, _, _, _, fusion_loss_value, merged_summary, step_value, ll_value = sess.run(
-                    self.BF.m_train_ops + [self.BF.train_op, self.increase_step, self.update_lr, self.BF.final_loss,
+                _, _, _, _, _, fusion_loss_value, merged_summary, step_value, ll_value = sess.run(
+                    self.BF.m_train_ops + [self.increase_step, self.update_lr, self.BF.final_loss,
                                            merged,
                                            self.global_step, self.lowest_loss
                                            ], feed_dict={
